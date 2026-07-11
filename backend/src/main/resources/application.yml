@@ -30,6 +30,8 @@ markit:
       secret: ${MARKIT_JWT_SECRET:dev-only-insecure-change-me-please-0123456789abcdef}
       access-token-validity: PT15M
       refresh-token-validity: P30D
+    google:
+      client-id: ${GOOGLE_CLIENT_ID:}
 
 # Observability (NFR-OBS-*)
 management:

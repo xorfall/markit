@@ -14,6 +14,8 @@ public final class AuthDtos {
 
   public record LoginRequest(@NotBlank String email, @NotBlank String password) {}
 
+  public record GoogleLoginRequest(@NotBlank String idToken) {}
+
   public record RefreshRequest(@NotBlank String refreshToken) {}
 
   public record LogoutRequest(@NotBlank String refreshToken) {}

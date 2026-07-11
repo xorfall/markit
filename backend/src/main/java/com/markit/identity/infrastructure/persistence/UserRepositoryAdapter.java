@@ -23,6 +23,11 @@ public class UserRepositoryAdapter implements UserRepository {
   }
 
   @Override
+  public Optional<User> findByGoogleSub(String googleSub) {
+    return jpa.findByGoogleSub(googleSub).map(UserRepositoryAdapter::toDomain);
+  }
+
+  @Override
   public Optional<User> findById(UserId id) {
     return jpa.findById(id.value()).map(UserRepositoryAdapter::toDomain);
   }

@@ -1,10 +1,12 @@
 package com.markit.identity.presentation;
 
+import com.markit.identity.application.AuthenticateWithGoogleService;
 import com.markit.identity.application.LoginService;
 import com.markit.identity.application.LogoutService;
 import com.markit.identity.application.RefreshSessionService;
 import com.markit.identity.application.RegisterUserService;
 import com.markit.identity.application.SessionTokens;
+import com.markit.identity.presentation.AuthDtos.GoogleLoginRequest;
 import com.markit.identity.presentation.AuthDtos.LoginRequest;
 import com.markit.identity.presentation.AuthDtos.LogoutRequest;
 import com.markit.identity.presentation.AuthDtos.RefreshRequest;
@@ -25,16 +27,19 @@ public class AuthController {
 
   private final RegisterUserService registerUser;
   private final LoginService login;
+  private final AuthenticateWithGoogleService googleLogin;
   private final RefreshSessionService refreshSession;
   private final LogoutService logout;
 
   public AuthController(
       RegisterUserService registerUser,
       LoginService login,
+      AuthenticateWithGoogleService googleLogin,
       RefreshSessionService refreshSession,
       LogoutService logout) {
     this.registerUser = registerUser;
     this.login = login;
+    this.googleLogin = googleLogin;
     this.refreshSession = refreshSession;
     this.logout = logout;
   }
@@ -48,6 +53,11 @@ public class AuthController {
   @PostMapping("/login")
   public TokenResponse login(@Valid @RequestBody LoginRequest request) {
     return toResponse(login.login(request.email(), request.password()));
+  }
+
+  @PostMapping("/google")
+  public TokenResponse google(@Valid @RequestBody GoogleLoginRequest request) {
+    return toResponse(googleLogin.authenticate(request.idToken()));
   }
 
   @PostMapping("/refresh")

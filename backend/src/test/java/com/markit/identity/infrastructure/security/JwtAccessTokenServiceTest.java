@@ -15,7 +15,8 @@ class JwtAccessTokenServiceTest {
 
   private static SecurityProperties props() {
     return new SecurityProperties(
-        new SecurityProperties.Jwt(SECRET, Duration.ofMinutes(15), Duration.ofDays(30)));
+        new SecurityProperties.Jwt(SECRET, Duration.ofMinutes(15), Duration.ofDays(30)),
+        new SecurityProperties.Google(""));
   }
 
   private static JwtAccessTokenService serviceAt(Instant now) {

@@ -91,6 +91,12 @@
       <version>0.12.6</version>
       <scope>runtime</scope>
     </dependency>
+    <!-- Google ID token verification (ADR-0006, FR-IDN-003) -->
+    <dependency>
+      <groupId>com.google.api-client</groupId>
+      <artifactId>google-api-client</artifactId>
+      <version>2.7.0</version>
+    </dependency>
 
     <!-- Observability (NFR-OBS-*) -->
     <dependency>

@@ -8,5 +8,7 @@ interface SpringDataUserRepository extends JpaRepository<UserJpaEntity, UUID> {
 
   Optional<UserJpaEntity> findByEmail(String email);
 
+  Optional<UserJpaEntity> findByGoogleSub(String googleSub);
+
   boolean existsByEmail(String email);
 }

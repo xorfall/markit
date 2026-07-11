@@ -10,6 +10,8 @@ public interface UserRepository {
 
   Optional<User> findByEmail(Email email);
 
+  Optional<User> findByGoogleSub(String googleSub);
+
   Optional<User> findById(UserId id);
 
   boolean existsByEmail(Email email);

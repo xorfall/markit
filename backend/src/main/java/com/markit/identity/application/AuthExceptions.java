@@ -25,4 +25,11 @@ public final class AuthExceptions {
       super("Invalid or expired refresh token");
     }
   }
+
+  /** Google ID token could not be verified, or its email is unverified. */
+  public static class InvalidGoogleTokenException extends RuntimeException {
+    public InvalidGoogleTokenException() {
+      super("Invalid Google credential");
+    }
+  }
 }

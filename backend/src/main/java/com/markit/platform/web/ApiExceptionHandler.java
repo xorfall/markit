@@ -2,6 +2,7 @@ package com.markit.platform.web;
 
 import com.markit.identity.application.AuthExceptions.EmailAlreadyUsedException;
 import com.markit.identity.application.AuthExceptions.InvalidCredentialsException;
+import com.markit.identity.application.AuthExceptions.InvalidGoogleTokenException;
 import com.markit.identity.application.AuthExceptions.InvalidRefreshTokenException;
 import java.util.List;
 import org.springframework.http.HttpStatus;
@@ -27,6 +28,11 @@ public class ApiExceptionHandler {
   @ExceptionHandler(InvalidRefreshTokenException.class)
   public ProblemDetail handleBadRefresh(InvalidRefreshTokenException ex) {
     return problem(HttpStatus.UNAUTHORIZED, "INVALID_REFRESH_TOKEN", ex.getMessage());
+  }
+
+  @ExceptionHandler(InvalidGoogleTokenException.class)
+  public ProblemDetail handleBadGoogleToken(InvalidGoogleTokenException ex) {
+    return problem(HttpStatus.UNAUTHORIZED, "INVALID_GOOGLE_TOKEN", ex.getMessage());
   }
 
   @ExceptionHandler(IllegalArgumentException.class)
