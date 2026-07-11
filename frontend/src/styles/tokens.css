@@ -1,0 +1,84 @@
+/*
+ * Ink & Marker design tokens — verbatim from docs/client-contract.md §B.2.
+ * These are the contract; every component derives its values from here.
+ */
+
+:root {
+  /* Color (light) */
+  --paper: #fcfcfd; /* cool near-white base — deliberately NOT the cream default */
+  --ink: #17191f; /* primary text, primary buttons */
+  --ink-soft: #5b6270; /* secondary text, meta */
+  --line: #e9e9ed; /* hairline dividers, card borders */
+  --marker: #ffdd57; /* THE signature: highlighter wash + active accent */
+  --marker-wash: rgba(255, 221, 87, 0.55); /* wash behind matched span */
+  --alert: #c8402e; /* FAILED state, destructive — brick red, not coral */
+
+  /* Derived surfaces */
+  --surface: #ffffff;
+  --surface-sunken: #f5f5f7;
+  --ink-on-marker: #17191f;
+  --alert-wash: rgba(200, 64, 46, 0.1);
+  --focus-ring: #17191f;
+  --shadow-card: 0 1px 2px rgba(23, 25, 31, 0.04), 0 1px 3px rgba(23, 25, 31, 0.06);
+  --shadow-pop: 0 6px 24px rgba(23, 25, 31, 0.12);
+
+  /* Type */
+  --font-display: 'Fraunces', Georgia, 'Times New Roman', serif;
+  --font-ui: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+
+  /* Spacing scale */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
+  --sp-6: 32px;
+  --sp-7: 48px;
+
+  --radius-sm: 6px;
+  --radius: 10px;
+  --radius-lg: 16px;
+
+  --rail-width: 232px;
+  --column-width: 288px;
+}
+
+/* Dark theme mirrors the light tokens (B.2: "a dark theme mirrors it"). */
+:root[data-theme='dark'] {
+  --paper: #131419;
+  --ink: #f2f3f6;
+  --ink-soft: #9aa0ad;
+  --line: #2a2c34;
+  --marker: #ffdd57;
+  --marker-wash: rgba(255, 221, 87, 0.28);
+  --alert: #ef6a58;
+
+  --surface: #1a1c22;
+  --surface-sunken: #101116;
+  --ink-on-marker: #17191f;
+  --alert-wash: rgba(239, 106, 88, 0.12);
+  --focus-ring: #ffdd57;
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-pop: 0 8px 28px rgba(0, 0, 0, 0.5);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --paper: #131419;
+    --ink: #f2f3f6;
+    --ink-soft: #9aa0ad;
+    --line: #2a2c34;
+    --marker: #ffdd57;
+    --marker-wash: rgba(255, 221, 87, 0.28);
+    --alert: #ef6a58;
+
+    --surface: #1a1c22;
+    --surface-sunken: #101116;
+    --ink-on-marker: #17191f;
+    --alert-wash: rgba(239, 106, 88, 0.12);
+    --focus-ring: #ffdd57;
+    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow-pop: 0 8px 28px rgba(0, 0, 0, 0.5);
+  }
+}
