@@ -1,7 +1,9 @@
 package com.markit.bookmarking.presentation;
 
+import com.markit.bookmarking.application.CategoryService;
 import com.markit.bookmarking.application.CollectionService;
 import com.markit.bookmarking.domain.CollectionId;
+import com.markit.bookmarking.presentation.CategoryDtos.CategoryResponse;
 import com.markit.bookmarking.presentation.CollectionDtos.CollectionResponse;
 import com.markit.bookmarking.presentation.CollectionDtos.CreateCollectionRequest;
 import com.markit.bookmarking.presentation.CollectionDtos.RenameCollectionRequest;
@@ -29,14 +31,31 @@ import org.springframework.web.bind.annotation.RestController;
 public class CollectionController {
 
   private final CollectionService collections;
+  private final CategoryService categories;
 
-  public CollectionController(CollectionService collections) {
+  public CollectionController(CollectionService collections, CategoryService categories) {
     this.collections = collections;
+    this.categories = categories;
   }
 
   @GetMapping
-  public List<CollectionResponse> list(@AuthenticationPrincipal AuthenticatedUser principal) {
-    return collections.list(principal.id()).stream().map(CollectionResponse::from).toList();
+  public List<CollectionResponse> list(
+      @AuthenticationPrincipal AuthenticatedUser principal,
+      @org.springframework.web.bind.annotation.RequestParam(required = false) String expand) {
+    boolean withCategories = expand != null && expand.contains("categories");
+    return collections.list(principal.id()).stream()
+        .map(
+            collection ->
+                withCategories
+                    ? CollectionResponse.expanded(collection, categoriesOf(principal, collection.id()))
+                    : CollectionResponse.from(collection))
+        .toList();
+  }
+
+  private List<CategoryResponse> categoriesOf(AuthenticatedUser principal, CollectionId collectionId) {
+    return categories.list(principal.id(), collectionId).stream()
+        .map(CategoryResponse::from)
+        .toList();
   }
 
   @PostMapping

@@ -3,9 +3,11 @@ package com.markit.platform.security;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
 /** Stateless JWT security (ADR-0006). Public: auth endpoints, ping, actuator. Everything else authed. */
@@ -26,6 +28,9 @@ public class SecurityConfig {
                     .authenticated())
         .httpBasic(basic -> basic.disable())
         .formLogin(form -> form.disable())
+        // Unauthenticated requests get 401 (not the servlet default 403) so the client's refresh
+        // interceptor triggers and a reload can restore the session.
+        .exceptionHandling(ex -> ex.authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)))
         .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
     return http.build();
   }
