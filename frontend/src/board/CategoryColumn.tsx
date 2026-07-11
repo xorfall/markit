@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react';
 import type { Category } from '../api/types';
-import { TrashIcon } from '../components/icons';
+import { PlusIcon, TrashIcon } from '../components/icons';
+import { AddBookmarkModal } from './AddBookmarkModal';
 import { BookmarkCard } from './BookmarkCard';
-import { InlineAddForm } from './InlineAddForm';
 import { useBookmarkMutations, useBookmarkPolling, useBookmarksQuery } from './useBookmarks';
 
 interface CategoryColumnProps {
@@ -14,8 +14,9 @@ interface CategoryColumnProps {
 /** One category column: its bookmark cards, add form, and PENDING polling. */
 export function CategoryColumn({ category, onRename, onDelete }: CategoryColumnProps): JSX.Element {
   const { data: bookmarks = [], isLoading } = useBookmarksQuery(category.id);
-  const { create, edit, remove, rescrape } = useBookmarkMutations(category.id);
+  const { edit, remove, rescrape } = useBookmarkMutations(category.id);
   const [name, setName] = useState(category.name);
+  const [adding, setAdding] = useState(false);
 
   const pending = useMemo(
     () =>
@@ -74,15 +75,15 @@ export function CategoryColumn({ category, onRename, onDelete }: CategoryColumnP
           ))
         )}
         <div className="column-add">
-          <InlineAddForm
-            triggerLabel="Add bookmark"
-            placeholder="https://…"
-            submitLabel="Add"
-            mono
-            onSubmit={(url) => create.mutate(url)}
-          />
+          <button className="btn btn-sm btn-ghost" onClick={() => setAdding(true)}>
+            <PlusIcon width={14} height={14} /> Add bookmark
+          </button>
         </div>
       </div>
+
+      {adding && (
+        <AddBookmarkModal categoryId={category.id} onClose={() => setAdding(false)} />
+      )}
     </section>
   );
 }

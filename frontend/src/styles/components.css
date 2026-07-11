@@ -641,6 +641,26 @@ mark.marker {
   margin-top: var(--sp-5);
 }
 
+/* Read-only URL with a copy button (add-bookmark dialog). */
+.copy-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.copy-url {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--ink-soft);
+  background: var(--surface-sunken);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px 8px;
+}
+
 /* ============ Loading / spinner ============ */
 .spinner {
   width: 18px;

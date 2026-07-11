@@ -29,6 +29,7 @@ export function BookmarkCard({
 
   const isUrlTitle = bookmark.title === bookmark.url;
   const stateClass = `state-pill state-pill-${bookmark.state.toLowerCase()}`;
+  const tags = bookmark.tags ?? []; // defensive: never assume the server sent tags
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
@@ -82,9 +83,9 @@ export function BookmarkCard({
 
       {bookmark.description && <p className="card-desc">{bookmark.description}</p>}
 
-      {bookmark.tags.length > 0 && (
+      {tags.length > 0 && (
         <div className="card-tags">
-          {bookmark.tags.map((tag) => (
+          {tags.map((tag) => (
             <span key={tag} className="chip">
               {tag}
             </span>

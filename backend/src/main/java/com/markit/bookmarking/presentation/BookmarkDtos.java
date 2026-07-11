@@ -28,6 +28,7 @@ public final class BookmarkDtos {
       String description,
       String state,
       String failureReason,
+      List<String> tags,
       int position,
       String createdAt,
       String updatedAt) {
@@ -41,6 +42,7 @@ public final class BookmarkDtos {
           bookmark.description(),
           bookmark.state().name(),
           bookmark.failureReason(),
+          List.of(), // manual tags are a later slice; always present so clients can rely on it
           bookmark.position(),
           bookmark.createdAt().toString(),
           bookmark.updatedAt().toString());
