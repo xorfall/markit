@@ -38,6 +38,8 @@ class ScrapeOrchestratorTest {
   private final BookmarkRepository bookmarks = mock(BookmarkRepository.class);
   private final ContentRepository contents = mock(ContentRepository.class);
   private final OutboxWriter outbox = mock(OutboxWriter.class);
+  private final org.springframework.context.ApplicationEventPublisher events =
+      mock(org.springframework.context.ApplicationEventPublisher.class);
   private final Clock clock = Clock.fixed(Instant.parse("2026-07-11T00:00:00Z"), ZoneOffset.UTC);
   private final UserId owner = UserId.newId();
 
@@ -45,7 +47,7 @@ class ScrapeOrchestratorTest {
 
   @BeforeEach
   void setUp() {
-    orchestrator = new ScrapeOrchestrator(bookmarks, contents, outbox, clock);
+    orchestrator = new ScrapeOrchestrator(bookmarks, contents, outbox, events, clock);
   }
 
   private Bookmark existingBookmark(BookmarkId id) {

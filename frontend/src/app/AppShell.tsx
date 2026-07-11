@@ -5,6 +5,7 @@ import { CommandBar } from '../search/CommandBar';
 import { SearchResults } from '../search/SearchResults';
 import { ThemeToggle } from '../components/ThemeToggle';
 import { useDebounced, useOnlineStatus } from './useDebounced';
+import { useLifecycleStream } from './useLifecycleStream';
 
 /**
  * Authenticated app shell: the hero command bar in the topbar, and below it
@@ -15,6 +16,8 @@ export function AppShell(): JSX.Element {
   const [query, setQuery] = useState('');
   const debouncedQuery = useDebounced(query, 250);
   const online = useOnlineStatus();
+
+  useLifecycleStream(Boolean(user)); // live scrape status via SSE (polling remains the fallback)
 
   const searching = debouncedQuery.trim().length > 0;
 

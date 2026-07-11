@@ -14,10 +14,13 @@ import com.markit.shared.events.ScrapeFailedPayload;
 import com.markit.shared.events.ScrapeMetadataReadyPayload;
 import com.markit.shared.events.ScrapeRequestedPayload;
 import com.markit.shared.outbox.OutboxWriter;
+import com.markit.shared.sse.BookmarkLifecycleEvent;
+import com.markit.shared.sse.SsePayloads;
 import java.time.Clock;
 import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -36,16 +39,19 @@ public class ScrapeOrchestrator {
   private final BookmarkRepository bookmarks;
   private final ContentRepository contents;
   private final OutboxWriter outbox;
+  private final ApplicationEventPublisher events;
   private final Clock clock;
 
   public ScrapeOrchestrator(
       BookmarkRepository bookmarks,
       ContentRepository contents,
       OutboxWriter outbox,
+      ApplicationEventPublisher events,
       Clock clock) {
     this.bookmarks = bookmarks;
     this.contents = contents;
     this.outbox = outbox;
+    this.events = events;
     this.clock = clock;
   }
 
@@ -80,6 +86,12 @@ public class ScrapeOrchestrator {
               bookmark.applyMetadata(payload.title(), payload.description(), clock.instant());
               bookmarks.save(bookmark);
               appendUpserted(bookmark);
+              events.publishEvent(
+                  new BookmarkLifecycleEvent(
+                      bookmark.ownerId().value(),
+                      "bookmark.metadata",
+                      new SsePayloads.Metadata(
+                          bookmark.id().asString(), bookmark.title(), bookmark.description())));
             });
   }
 
@@ -94,6 +106,11 @@ public class ScrapeOrchestrator {
               bookmark.markIndexed(clock.instant());
               bookmarks.save(bookmark);
               appendUpserted(bookmark);
+              events.publishEvent(
+                  new BookmarkLifecycleEvent(
+                      bookmark.ownerId().value(),
+                      "bookmark.state",
+                      new SsePayloads.State(bookmark.id().asString(), "INDEXED", null)));
             });
   }
 
@@ -105,6 +122,12 @@ public class ScrapeOrchestrator {
             bookmark -> {
               bookmark.markFailed(payload.reason(), clock.instant());
               bookmarks.save(bookmark);
+              events.publishEvent(
+                  new BookmarkLifecycleEvent(
+                      bookmark.ownerId().value(),
+                      "bookmark.state",
+                      new SsePayloads.State(
+                          bookmark.id().asString(), "FAILED", payload.reason())));
             });
   }
 
