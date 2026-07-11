@@ -1,0 +1,57 @@
+spring:
+  application:
+    name: markit-backend
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:markit}
+    username: ${DB_USER:markit}
+    password: ${DB_PASSWORD:markit}
+  jpa:
+    hibernate:
+      ddl-auto: none          # Flyway owns the schema (db-migration-agent)
+    open-in-view: false
+  flyway:
+    enabled: true
+  elasticsearch:
+    uris: ${ES_URIS:http://localhost:9200}
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USER:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+
+server:
+  port: 8080
+
+# Observability (NFR-OBS-*)
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      show-details: always
+      probes:
+        enabled: true
+      # ES and RabbitMQ are degradable (ADR-0007, NFR-AVAIL-002/003): they report in overall
+      # health but must NOT gate readiness. Postgres (db) is essential and does.
+      group:
+        readiness:
+          include: readinessState,db
+        liveness:
+          include: livenessState
+  metrics:
+    tags:
+      application: markit-backend
+  tracing:
+    sampling:
+      probability: 1.0        # 100% in dev; tune for prod
+  otlp:
+    tracing:
+      endpoint: ${OTLP_ENDPOINT:http://localhost:4318/v1/traces}
+
+# Structured JSON logs with trace ids (Spring Boot 3.4 native structured logging, NFR-OBS-001)
+logging:
+  structured:
+    format:
+      console: ecs
