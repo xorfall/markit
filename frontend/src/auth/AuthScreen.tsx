@@ -5,6 +5,17 @@ import { GoogleButton } from './GoogleButton';
 
 type Mode = 'login' | 'register';
 
+const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+const MIN_PASSWORD = 8;
+
+/** Turn the server's field errors into one readable line ("Email: must be a valid address"). */
+function describeFieldErrors(err: ApiError): string | null {
+  if (err.fieldErrors.length === 0) return null;
+  return err.fieldErrors
+    .map((f) => `${f.field.charAt(0).toUpperCase()}${f.field.slice(1)}: ${f.message}`)
+    .join(' · ');
+}
+
 /** Combined sign-in / create-account screen. Copy is active, sentence case. */
 export function AuthScreen(): JSX.Element {
   const { login, register } = useAuth();
@@ -12,22 +23,28 @@ export function AuthScreen(): JSX.Element {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [fieldError, setFieldError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const isRegister = mode === 'register';
 
+  // Client-side rules, so the user gets instant, specific feedback before any request.
+  const validate = (): string | null => {
+    if (!email.trim()) return 'Enter your email address.';
+    if (!EMAIL_RE.test(email.trim())) return 'Enter a valid email address, like you@example.com.';
+    if (!password) return 'Enter your password.';
+    if (isRegister && password.length < MIN_PASSWORD) {
+      return `Use at least ${MIN_PASSWORD} characters for your password.`;
+    }
+    return null;
+  };
+
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
-    setFieldError(null);
 
-    if (!email.trim() || !password) {
-      setFieldError('Enter your email and password.');
-      return;
-    }
-    if (isRegister && password.length < 8) {
-      setFieldError('Use at least 8 characters for your password.');
+    const problem = validate();
+    if (problem) {
+      setError(problem);
       return;
     }
 
@@ -37,7 +54,8 @@ export function AuthScreen(): JSX.Element {
       else await login(email.trim(), password);
     } catch (err) {
       const apiErr = err instanceof ApiError ? err : toApiError(err);
-      setError(messageForCode(apiErr.code, apiErr.detail));
+      // Prefer the server's specific field errors; otherwise the friendly per-code copy.
+      setError(describeFieldErrors(apiErr) ?? messageForCode(apiErr.code));
     } finally {
       setBusy(false);
     }
@@ -46,7 +64,6 @@ export function AuthScreen(): JSX.Element {
   const switchMode = () => {
     setMode(isRegister ? 'login' : 'register');
     setError(null);
-    setFieldError(null);
   };
 
   return (
@@ -71,6 +88,7 @@ export function AuthScreen(): JSX.Element {
               onChange={(e) => setEmail(e.target.value)}
               placeholder="you@example.com"
             />
+            <p className="field-hint">Use a valid email, like you@example.com.</p>
           </div>
 
           <div className="field">
@@ -86,10 +104,14 @@ export function AuthScreen(): JSX.Element {
               onChange={(e) => setPassword(e.target.value)}
               placeholder={isRegister ? 'At least 8 characters' : 'Your password'}
             />
+            {isRegister && <p className="field-hint">At least {MIN_PASSWORD} characters.</p>}
           </div>
 
-          {fieldError && <p className="inline-error">{fieldError}</p>}
-          {error && <p className="inline-error">{error}</p>}
+          {error && (
+            <p className="inline-error" role="alert">
+              {error}
+            </p>
+          )}
 
           <button className="btn btn-primary btn-block" type="submit" disabled={busy}>
             {busy ? 'Working…' : isRegister ? 'Create account' : 'Sign in'}
