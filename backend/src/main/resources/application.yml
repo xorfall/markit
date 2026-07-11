@@ -22,6 +22,15 @@ spring:
 server:
   port: 8080
 
+# Security (ADR-0006). Secret MUST be overridden in prod via MARKIT_JWT_SECRET (NFR-SEC-004);
+# the default is a clearly-non-secret dev value, long enough (>=32 bytes) for HS256.
+markit:
+  security:
+    jwt:
+      secret: ${MARKIT_JWT_SECRET:dev-only-insecure-change-me-please-0123456789abcdef}
+      access-token-validity: PT15M
+      refresh-token-validity: P30D
+
 # Observability (NFR-OBS-*)
 management:
   endpoints:
