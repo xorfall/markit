@@ -87,6 +87,38 @@ services:
       timeout: 5s
       retries: 12
 
+  # Optional scheduled Postgres backups (R-OPS-01). OFF by default — only starts under the
+  # `backups` profile:  docker compose --profile backups up -d backup
+  # Reuses the postgres:16 image (matching pg_dump version) and runs backup.sh on an interval.
+  backup:
+    image: postgres:16
+    profiles: ["backups"]
+    depends_on:
+      postgres: { condition: service_healthy }
+    environment:
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: ${DB_NAME:-markit}
+      DB_USER: ${DB_USER:-markit}
+      PGPASSWORD: ${DB_PASSWORD:-markit}
+      BACKUP_DIR: /backups
+      RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-14}
+      # Interval between runs, seconds. Default 24h. Override for demos/tests.
+      BACKUP_INTERVAL_SECONDS: ${BACKUP_INTERVAL_SECONDS:-86400}
+    volumes:
+      - "./backup.sh:/usr/local/bin/backup.sh:ro"
+      - "backups:/backups"
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        echo "[backup] loop starting; interval=${BACKUP_INTERVAL_SECONDS:-86400}s dir=$$BACKUP_DIR retention=$${RETENTION_DAYS}d";
+        while true; do
+          bash /usr/local/bin/backup.sh || echo "[backup] run failed (continuing)";
+          sleep "$${BACKUP_INTERVAL_SECONDS:-86400}";
+        done
+    restart: unless-stopped
+
 volumes:
   pgdata:
   esdata:
+  backups:
