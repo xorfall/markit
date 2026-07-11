@@ -9,6 +9,10 @@ import com.markit.bookmarking.domain.BookmarkId;
 import com.markit.bookmarking.domain.CategoryId;
 import com.markit.bookmarking.domain.Url;
 import com.markit.identity.domain.UserId;
+import com.markit.shared.events.BookmarkDeletedPayload;
+import com.markit.shared.events.BookmarkUpsertedPayload;
+import com.markit.shared.events.EventTypes;
+import com.markit.shared.outbox.OutboxWriter;
 import java.time.Clock;
 import java.util.List;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -26,12 +30,17 @@ public class BookmarkService {
 
   private final BookmarkRepository bookmarks;
   private final CategoryRepository categories;
+  private final OutboxWriter outbox;
   private final Clock clock;
 
   public BookmarkService(
-      BookmarkRepository bookmarks, CategoryRepository categories, Clock clock) {
+      BookmarkRepository bookmarks,
+      CategoryRepository categories,
+      OutboxWriter outbox,
+      Clock clock) {
     this.bookmarks = bookmarks;
     this.categories = categories;
+    this.outbox = outbox;
     this.clock = clock;
   }
 
@@ -43,7 +52,9 @@ public class BookmarkService {
     int position = bookmarks.findByCategoryAndOwner(categoryId, owner).size();
     Bookmark bookmark =
         Bookmark.add(BookmarkId.newId(), categoryId, owner, url, position, clock.instant());
-    return persist(bookmark);
+    persist(bookmark);
+    appendUpserted(bookmark);
+    return bookmark;
   }
 
   @Transactional
@@ -51,6 +62,7 @@ public class BookmarkService {
     Bookmark bookmark = require(owner, id);
     bookmark.editDetails(title, description, clock.instant());
     bookmarks.save(bookmark);
+    appendUpserted(bookmark);
     return bookmark;
   }
 
@@ -61,12 +73,16 @@ public class BookmarkService {
     requireNoDuplicate(targetCategoryId, bookmark.url());
     int position = bookmarks.findByCategoryAndOwner(targetCategoryId, owner).size();
     bookmark.moveTo(targetCategoryId, position, clock.instant());
-    return persist(bookmark);
+    persist(bookmark);
+    appendUpserted(bookmark);
+    return bookmark;
   }
 
   @Transactional
   public void delete(UserId owner, BookmarkId id) {
-    bookmarks.delete(require(owner, id));
+    Bookmark bookmark = require(owner, id);
+    bookmarks.delete(bookmark);
+    appendDeleted(bookmark.id());
   }
 
   @Transactional
@@ -98,6 +114,34 @@ public class BookmarkService {
       // Race: another concurrent add slipped the same URL past the pre-check (data-model §3).
       throw new DuplicateUrlException();
     }
+  }
+
+  /**
+   * Append a {@code bookmark.upserted} event within the current transaction, so the state row and
+   * the outbox row commit atomically (no dual write, ADR-0003).
+   */
+  private void appendUpserted(Bookmark bookmark) {
+    outbox.append(
+        EventTypes.AGGREGATE_BOOKMARK,
+        bookmark.id().value(),
+        EventTypes.BOOKMARK_UPSERTED,
+        new BookmarkUpsertedPayload(
+            bookmark.id().value(),
+            bookmark.ownerId().value(),
+            bookmark.categoryId().value(),
+            bookmark.url().value(),
+            bookmark.title(),
+            bookmark.description(),
+            bookmark.state().name(),
+            bookmark.createdAt()));
+  }
+
+  private void appendDeleted(BookmarkId id) {
+    outbox.append(
+        EventTypes.AGGREGATE_BOOKMARK,
+        id.value(),
+        EventTypes.BOOKMARK_DELETED,
+        new BookmarkDeletedPayload(id.value()));
   }
 
   private void requireNoDuplicate(CategoryId categoryId, Url url) {

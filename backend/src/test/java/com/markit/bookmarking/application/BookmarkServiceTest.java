@@ -3,6 +3,7 @@ package com.markit.bookmarking.application;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -18,7 +19,10 @@ import com.markit.bookmarking.domain.BookmarkState;
 import com.markit.bookmarking.domain.Category;
 import com.markit.bookmarking.domain.CategoryId;
 import com.markit.bookmarking.domain.CollectionId;
+import com.markit.bookmarking.domain.Url;
 import com.markit.identity.domain.UserId;
+import com.markit.shared.events.EventTypes;
+import com.markit.shared.outbox.OutboxWriter;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -32,6 +36,7 @@ class BookmarkServiceTest {
 
   private final BookmarkRepository bookmarks = mock(BookmarkRepository.class);
   private final CategoryRepository categories = mock(CategoryRepository.class);
+  private final OutboxWriter outbox = mock(OutboxWriter.class);
   private final Clock clock = Clock.fixed(Instant.parse("2026-07-11T00:00:00Z"), ZoneOffset.UTC);
   private final UserId owner = UserId.newId();
 
@@ -39,7 +44,7 @@ class BookmarkServiceTest {
 
   @BeforeEach
   void setUp() {
-    service = new BookmarkService(bookmarks, categories, clock);
+    service = new BookmarkService(bookmarks, categories, outbox, clock);
   }
 
   @Test
@@ -57,6 +62,42 @@ class BookmarkServiceTest {
     assertThat(saved.getValue().title()).isEqualTo("https://example.com");
     assertThat(saved.getValue().url().value()).isEqualTo("https://example.com");
     assertThat(added.ownerId()).isEqualTo(owner);
+    verify(outbox)
+        .append(
+            eq(EventTypes.AGGREGATE_BOOKMARK),
+            eq(added.id().value()),
+            eq(EventTypes.BOOKMARK_UPSERTED),
+            any());
+  }
+
+  @Test
+  void should_AppendDeletedEvent_When_DeletingOwnedBookmark() {
+    BookmarkId id = BookmarkId.newId();
+    CategoryId categoryId = CategoryId.newId();
+    Bookmark bookmark =
+        Bookmark.add(id, categoryId, owner, new Url("https://example.com"), 0, clock.instant());
+    when(bookmarks.findByIdAndOwner(id, owner)).thenReturn(Optional.of(bookmark));
+
+    service.delete(owner, id);
+
+    verify(bookmarks).delete(bookmark);
+    verify(outbox)
+        .append(
+            eq(EventTypes.AGGREGATE_BOOKMARK),
+            eq(id.value()),
+            eq(EventTypes.BOOKMARK_DELETED),
+            any());
+  }
+
+  @Test
+  void should_NotAppendEvent_When_AddRejectedAsDuplicate() {
+    CategoryId categoryId = CategoryId.newId();
+    ownedCategory(categoryId);
+    when(bookmarks.existsByCategoryAndUrl(categoryId, "https://example.com")).thenReturn(true);
+
+    assertThatThrownBy(() -> service.add(owner, categoryId, "https://example.com"))
+        .isInstanceOf(DuplicateUrlException.class);
+    verify(outbox, never()).append(any(), any(), any(), any());
   }
 
   @Test

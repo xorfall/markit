@@ -158,6 +158,12 @@
       <version>${archunit.version}</version>
       <scope>test</scope>
     </dependency>
+    <!-- Awaitility: poll ES for eventual consistency in the outbox ITs (NFR-CONS-001) -->
+    <dependency>
+      <groupId>org.awaitility</groupId>
+      <artifactId>awaitility</artifactId>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 
   <build>

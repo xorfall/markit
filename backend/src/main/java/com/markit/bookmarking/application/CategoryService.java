@@ -1,12 +1,17 @@
 package com.markit.bookmarking.application;
 
 import com.markit.bookmarking.application.BookmarkingExceptions.NotFoundException;
+import com.markit.bookmarking.application.port.BookmarkRepository;
 import com.markit.bookmarking.application.port.CategoryRepository;
 import com.markit.bookmarking.application.port.CollectionRepository;
+import com.markit.bookmarking.domain.Bookmark;
 import com.markit.bookmarking.domain.Category;
 import com.markit.bookmarking.domain.CategoryId;
 import com.markit.bookmarking.domain.CollectionId;
 import com.markit.identity.domain.UserId;
+import com.markit.shared.events.BookmarkDeletedPayload;
+import com.markit.shared.events.EventTypes;
+import com.markit.shared.outbox.OutboxWriter;
 import java.time.Clock;
 import java.util.List;
 import org.springframework.stereotype.Service;
@@ -21,12 +26,20 @@ public class CategoryService {
 
   private final CategoryRepository categories;
   private final CollectionRepository collections;
+  private final BookmarkRepository bookmarks;
+  private final OutboxWriter outbox;
   private final Clock clock;
 
   public CategoryService(
-      CategoryRepository categories, CollectionRepository collections, Clock clock) {
+      CategoryRepository categories,
+      CollectionRepository collections,
+      BookmarkRepository bookmarks,
+      OutboxWriter outbox,
+      Clock clock) {
     this.categories = categories;
     this.collections = collections;
+    this.bookmarks = bookmarks;
+    this.outbox = outbox;
     this.clock = clock;
   }
 
@@ -58,9 +71,26 @@ public class CategoryService {
     return category;
   }
 
+  /**
+   * Delete a category. The DB {@code ON DELETE CASCADE} removes descendant bookmark rows silently,
+   * which would leave the ES projection stale — so we emit a {@code bookmark.deleted} event per
+   * descendant bookmark (owner-scoped) in the same transaction before deleting the category.
+   */
   @Transactional
   public void delete(UserId owner, CategoryId id) {
-    categories.delete(require(owner, id));
+    Category category = require(owner, id);
+    for (Bookmark bookmark : bookmarks.findByCategoryAndOwner(id, owner)) {
+      appendBookmarkDeleted(bookmark);
+    }
+    categories.delete(category);
+  }
+
+  private void appendBookmarkDeleted(Bookmark bookmark) {
+    outbox.append(
+        EventTypes.AGGREGATE_BOOKMARK,
+        bookmark.id().value(),
+        EventTypes.BOOKMARK_DELETED,
+        new BookmarkDeletedPayload(bookmark.id().value()));
   }
 
   @Transactional
