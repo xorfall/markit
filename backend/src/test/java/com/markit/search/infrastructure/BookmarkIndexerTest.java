@@ -1,19 +1,21 @@
 package com.markit.search.infrastructure;
 
-import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import com.markit.search.application.port.ContentSource;
 import com.markit.shared.events.BookmarkDeletedPayload;
 import com.markit.shared.events.BookmarkUpsertedPayload;
 import com.markit.shared.events.EventTypes;
 import java.time.Instant;
+import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.elasticsearch.core.ElasticsearchOperations;
@@ -21,8 +23,10 @@ import org.springframework.data.elasticsearch.core.ElasticsearchOperations;
 class BookmarkIndexerTest {
 
   private final ElasticsearchOperations elasticsearch = mock(ElasticsearchOperations.class);
+  private final ContentSource contentSource = mock(ContentSource.class);
   private final ObjectMapper mapper = new ObjectMapper().registerModule(new JavaTimeModule());
-  private final BookmarkIndexer indexer = new BookmarkIndexer(elasticsearch, mapper);
+  private final BookmarkIndexer indexer =
+      new BookmarkIndexer(elasticsearch, contentSource, mapper);
 
   private static BookmarkUpsertedPayload upsert(UUID id) {
     return new BookmarkUpsertedPayload(
@@ -40,6 +44,7 @@ class BookmarkIndexerTest {
   void should_UpsertDocumentById_WithMandatoryUserId() {
     var id = UUID.randomUUID();
     var payload = upsert(id);
+    when(contentSource.findContent(id)).thenReturn(Optional.empty());
 
     indexer.index(payload);
 
@@ -52,9 +57,32 @@ class BookmarkIndexerTest {
   }
 
   @Test
+  void should_EnrichDocumentWithContent_When_ContentPresent() {
+    var id = UUID.randomUUID();
+    when(contentSource.findContent(id)).thenReturn(Optional.of("the full scraped page text"));
+
+    indexer.index(upsert(id));
+
+    verify(elasticsearch)
+        .save(
+            argThat((BookmarkDocument doc) -> "the full scraped page text".equals(doc.getContent())));
+  }
+
+  @Test
+  void should_LeaveContentNull_When_ContentAbsent() {
+    var id = UUID.randomUUID();
+    when(contentSource.findContent(id)).thenReturn(Optional.empty());
+
+    indexer.index(upsert(id));
+
+    verify(elasticsearch).save(argThat((BookmarkDocument doc) -> doc.getContent() == null));
+  }
+
+  @Test
   void should_BeIdempotent_When_SameUpsertAppliedTwice() {
     var id = UUID.randomUUID();
     var payload = upsert(id);
+    when(contentSource.findContent(id)).thenReturn(Optional.empty());
 
     indexer.index(payload);
     indexer.index(payload);
@@ -72,11 +100,14 @@ class BookmarkIndexerTest {
     indexer.remove(new BookmarkDeletedPayload(id)); // already-absent second delete is a no-op
 
     verify(elasticsearch, times(2)).delete(id.toString(), BookmarkDocument.class);
+    // Delete is unchanged: no content read is involved.
+    verifyNoInteractions(contentSource);
   }
 
   @Test
   void should_DispatchByRoutingKey() throws Exception {
     var id = UUID.randomUUID();
+    when(contentSource.findContent(id)).thenReturn(Optional.empty());
 
     indexer.handle(EventTypes.BOOKMARK_UPSERTED, mapper.writeValueAsBytes(upsert(id)));
     verify(elasticsearch).save(any(BookmarkDocument.class));

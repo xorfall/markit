@@ -1,6 +1,7 @@
 package com.markit.search.infrastructure;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.markit.search.application.port.ContentSource;
 import com.markit.shared.events.BookmarkDeletedPayload;
 import com.markit.shared.events.BookmarkUpsertedPayload;
 import com.markit.shared.events.EventTypes;
@@ -26,10 +27,15 @@ public class BookmarkIndexer {
   private static final Logger log = LoggerFactory.getLogger(BookmarkIndexer.class);
 
   private final ElasticsearchOperations elasticsearch;
+  private final ContentSource contentSource;
   private final ObjectMapper objectMapper;
 
-  public BookmarkIndexer(ElasticsearchOperations elasticsearch, ObjectMapper objectMapper) {
+  public BookmarkIndexer(
+      ElasticsearchOperations elasticsearch,
+      ContentSource contentSource,
+      ObjectMapper objectMapper) {
     this.elasticsearch = elasticsearch;
+    this.contentSource = contentSource;
     this.objectMapper = objectMapper;
   }
 
@@ -48,9 +54,15 @@ public class BookmarkIndexer {
     }
   }
 
-  /** Idempotent upsert: save-by-id overwrites any existing doc with the same id. */
+  /**
+   * Idempotent upsert: save-by-id overwrites any existing doc with the same id. The document is
+   * enriched with the bookmark's current content read from Postgres (architecture §4.1) — kept out
+   * of the event payload so a ≤1 MB blob never rides through RabbitMQ. Content is {@code null} until
+   * the scrape's content phase has stored it.
+   */
   void index(BookmarkUpsertedPayload payload) {
-    elasticsearch.save(BookmarkDocument.from(payload));
+    String content = contentSource.findContent(payload.bookmarkId()).orElse(null);
+    elasticsearch.save(BookmarkDocument.from(payload).withContent(content));
   }
 
   /** Idempotent delete: delete-by-id; ES treats an absent id as a no-op (does not throw). */

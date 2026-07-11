@@ -2,6 +2,7 @@ package com.markit.search.infrastructure;
 
 import com.markit.search.application.IndexableBookmark;
 import com.markit.search.application.port.BookmarkSource;
+import com.markit.search.application.port.ContentSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.elasticsearch.core.ElasticsearchOperations;
@@ -20,10 +21,15 @@ public class ReindexService {
 
   private final ElasticsearchOperations elasticsearch;
   private final BookmarkSource bookmarkSource;
+  private final ContentSource contentSource;
 
-  public ReindexService(ElasticsearchOperations elasticsearch, BookmarkSource bookmarkSource) {
+  public ReindexService(
+      ElasticsearchOperations elasticsearch,
+      BookmarkSource bookmarkSource,
+      ContentSource contentSource) {
     this.elasticsearch = elasticsearch;
     this.bookmarkSource = bookmarkSource;
+    this.contentSource = contentSource;
   }
 
   /** Wipe and rebuild the index from the source of truth. Returns the number of docs indexed. */
@@ -37,7 +43,10 @@ public class ReindexService {
 
     long count = 0;
     for (IndexableBookmark bookmark : bookmarkSource.findAllForIndexing()) {
-      elasticsearch.save(BookmarkDocument.from(bookmark));
+      // Enrich each row with its scraped content from Postgres (S5) — the reindex mirrors the
+      // event path so a rebuilt index is fully content-searchable.
+      String content = contentSource.findContent(bookmark.bookmarkId()).orElse(null);
+      elasticsearch.save(BookmarkDocument.from(bookmark.withContent(content)));
       count++;
     }
     log.info("Reindexed {} bookmarks into ES", count);

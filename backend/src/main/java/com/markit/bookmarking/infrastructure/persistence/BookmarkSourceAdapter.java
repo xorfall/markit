@@ -28,8 +28,12 @@ public class BookmarkSourceAdapter implements BookmarkSource {
                     e.getId(),
                     e.getOwnerId(),
                     e.getCategoryId(),
+                    e.getUrl(),
                     e.getTitle(),
                     e.getDescription(),
+                    // Content lives in the scraping context (bookmark_content); the reindexer
+                    // enriches it via the ContentSource port, so it stays null here.
+                    null,
                     e.getState(),
                     e.getCreatedAt()))
         .toList();
