@@ -1,5 +1,7 @@
 package com.markit.platform.web;
 
+import com.markit.bookmarking.application.BookmarkingExceptions.DuplicateUrlException;
+import com.markit.bookmarking.application.BookmarkingExceptions.NotFoundException;
 import com.markit.identity.application.AuthExceptions.EmailAlreadyUsedException;
 import com.markit.identity.application.AuthExceptions.InvalidCredentialsException;
 import com.markit.identity.application.AuthExceptions.InvalidGoogleTokenException;
@@ -33,6 +35,16 @@ public class ApiExceptionHandler {
   @ExceptionHandler(InvalidGoogleTokenException.class)
   public ProblemDetail handleBadGoogleToken(InvalidGoogleTokenException ex) {
     return problem(HttpStatus.UNAUTHORIZED, "INVALID_GOOGLE_TOKEN", ex.getMessage());
+  }
+
+  @ExceptionHandler(NotFoundException.class)
+  public ProblemDetail handleNotFound(NotFoundException ex) {
+    return problem(HttpStatus.NOT_FOUND, "NOT_FOUND", ex.getMessage());
+  }
+
+  @ExceptionHandler(DuplicateUrlException.class)
+  public ProblemDetail handleDuplicateUrl(DuplicateUrlException ex) {
+    return problem(HttpStatus.CONFLICT, "DUPLICATE_URL", ex.getMessage());
   }
 
   @ExceptionHandler(IllegalArgumentException.class)

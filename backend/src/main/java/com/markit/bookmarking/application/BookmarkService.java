@@ -1,0 +1,120 @@
+package com.markit.bookmarking.application;
+
+import com.markit.bookmarking.application.BookmarkingExceptions.DuplicateUrlException;
+import com.markit.bookmarking.application.BookmarkingExceptions.NotFoundException;
+import com.markit.bookmarking.application.port.BookmarkRepository;
+import com.markit.bookmarking.application.port.CategoryRepository;
+import com.markit.bookmarking.domain.Bookmark;
+import com.markit.bookmarking.domain.BookmarkId;
+import com.markit.bookmarking.domain.CategoryId;
+import com.markit.bookmarking.domain.Url;
+import com.markit.identity.domain.UserId;
+import java.time.Clock;
+import java.util.List;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+/**
+ * Use cases for {@link Bookmark}s (FR-BMK-004/005/006/007/008). Adding and moving verify the target
+ * category belongs to the current user and re-check the duplicate URL in the destination. Duplicate
+ * prevention is race-safe: a pre-check plus a catch of the DB {@code UNIQUE} violation (data-model
+ * §3). Every load is owner-scoped (R-SEC-01).
+ */
+@Service
+public class BookmarkService {
+
+  private final BookmarkRepository bookmarks;
+  private final CategoryRepository categories;
+  private final Clock clock;
+
+  public BookmarkService(
+      BookmarkRepository bookmarks, CategoryRepository categories, Clock clock) {
+    this.bookmarks = bookmarks;
+    this.categories = categories;
+    this.clock = clock;
+  }
+
+  @Transactional
+  public Bookmark add(UserId owner, CategoryId categoryId, String rawUrl) {
+    requireCategory(owner, categoryId);
+    Url url = new Url(rawUrl);
+    requireNoDuplicate(categoryId, url);
+    int position = bookmarks.findByCategoryAndOwner(categoryId, owner).size();
+    Bookmark bookmark =
+        Bookmark.add(BookmarkId.newId(), categoryId, owner, url, position, clock.instant());
+    return persist(bookmark);
+  }
+
+  @Transactional
+  public Bookmark editDetails(UserId owner, BookmarkId id, String title, String description) {
+    Bookmark bookmark = require(owner, id);
+    bookmark.editDetails(title, description, clock.instant());
+    bookmarks.save(bookmark);
+    return bookmark;
+  }
+
+  @Transactional
+  public Bookmark move(UserId owner, BookmarkId id, CategoryId targetCategoryId) {
+    Bookmark bookmark = require(owner, id);
+    requireCategory(owner, targetCategoryId);
+    requireNoDuplicate(targetCategoryId, bookmark.url());
+    int position = bookmarks.findByCategoryAndOwner(targetCategoryId, owner).size();
+    bookmark.moveTo(targetCategoryId, position, clock.instant());
+    return persist(bookmark);
+  }
+
+  @Transactional
+  public void delete(UserId owner, BookmarkId id) {
+    bookmarks.delete(require(owner, id));
+  }
+
+  @Transactional
+  public void reorder(UserId owner, CategoryId categoryId, List<BookmarkId> orderedIds) {
+    requireCategory(owner, categoryId);
+    for (int position = 0; position < orderedIds.size(); position++) {
+      Bookmark bookmark = require(owner, orderedIds.get(position));
+      bookmark.reposition(position, clock.instant());
+      bookmarks.save(bookmark);
+    }
+  }
+
+  @Transactional(readOnly = true)
+  public Bookmark get(UserId owner, BookmarkId id) {
+    return require(owner, id);
+  }
+
+  @Transactional(readOnly = true)
+  public List<Bookmark> list(UserId owner, CategoryId categoryId) {
+    requireCategory(owner, categoryId);
+    return bookmarks.findByCategoryAndOwner(categoryId, owner);
+  }
+
+  private Bookmark persist(Bookmark bookmark) {
+    try {
+      bookmarks.save(bookmark);
+      return bookmark;
+    } catch (DataIntegrityViolationException e) {
+      // Race: another concurrent add slipped the same URL past the pre-check (data-model §3).
+      throw new DuplicateUrlException();
+    }
+  }
+
+  private void requireNoDuplicate(CategoryId categoryId, Url url) {
+    if (bookmarks.existsByCategoryAndUrl(categoryId, url.value())) {
+      throw new DuplicateUrlException();
+    }
+  }
+
+  private Bookmark require(UserId owner, BookmarkId id) {
+    return bookmarks
+        .findByIdAndOwner(id, owner)
+        .orElseThrow(() -> new NotFoundException("Bookmark not found"));
+  }
+
+  private void requireCategory(UserId owner, CategoryId categoryId) {
+    categories
+        .findByIdAndOwner(categoryId, owner)
+        .orElseThrow(() -> new NotFoundException("Category not found"));
+  }
+}
