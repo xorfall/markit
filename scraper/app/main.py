@@ -12,7 +12,8 @@ Run locally with::
 
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
+import asyncio
+from contextlib import asynccontextmanager, suppress
 from typing import AsyncIterator
 
 from fastapi import FastAPI
@@ -38,9 +39,22 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     log = get_logger(__name__)
     log.info("service.startup", service=_SERVICE_NAME, version=__version__)
+
+    # Start the RabbitMQ consumer as a background task. Imported lazily so the
+    # HTTP surface (and its tests) never requires the AMQP dependency at import
+    # time. The task reconnects on its own; startup never blocks on the broker.
+    from .messaging.consumer import ScrapeConsumer
+
+    consumer = ScrapeConsumer(settings)
+    app.state.consumer = consumer
+    consumer_task = asyncio.create_task(consumer.run(), name="scrape-consumer")
     try:
         yield
     finally:
+        consumer.request_stop()
+        consumer_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await consumer_task
         log.info("service.shutdown", service=_SERVICE_NAME)
 
 
@@ -76,8 +90,10 @@ def _register_routes(app: FastAPI) -> None:
     async def readiness(settings: Settings = _settings_dep()) -> dict[str, str]:
         """Readiness probe.
 
-        For S0 this always reports ready. Later it will verify the RabbitMQ
-        connection (and any other hard dependency) before returning 200.
+        Reports ``ready`` for the HTTP surface. Broker connectivity is observable
+        via ``app.state.consumer.is_connected`` and the consumer logs; it is
+        intentionally not a hard gate here so the process stays serviceable while
+        the consumer reconnects in the background.
         """
         return {"status": "ready"}
 

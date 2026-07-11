@@ -13,8 +13,19 @@ from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Default maximum size (in bytes) of a fetched response body: 1 MiB.
-# In later phases the fetcher enforces this cap to bound memory usage.
+# The fetcher enforces this cap while streaming to bound memory usage and to
+# defend against decompression bombs (R-SEC-05).
 DEFAULT_MAX_CONTENT_BYTES = 1_048_576
+
+# Default bounded timeout (seconds) for an outbound fetch.
+DEFAULT_REQUEST_TIMEOUT_SECONDS = 15.0
+
+# Default maximum number of redirect hops followed (each re-validated for SSRF).
+DEFAULT_MAX_REDIRECTS = 5
+
+# Default minimum length (characters) of extracted content below which the
+# static extraction is considered insufficient and the headless fallback runs.
+DEFAULT_MIN_CONTENT_LENGTH = 200
 
 
 class Settings(BaseSettings):
@@ -25,7 +36,13 @@ class Settings(BaseSettings):
         rabbitmq_port: AMQP port of the RabbitMQ broker.
         rabbitmq_user: Username used to authenticate against RabbitMQ.
         rabbitmq_password: Password used to authenticate against RabbitMQ.
-        max_content_bytes: Hard cap on fetched response body size in bytes.
+        rabbitmq_vhost: Virtual host on the RabbitMQ broker.
+        max_content_bytes: Hard cap on fetched (decoded) response body size in
+            bytes; also enforced against the final extracted content.
+        request_timeout_seconds: Bounded timeout for an outbound fetch.
+        max_redirects: Maximum redirect hops followed, each re-validated for SSRF.
+        min_content_length: Minimum static-extraction content length below which
+            the headless-browser fallback is triggered.
         otlp_endpoint: Optional OTLP collector endpoint for OpenTelemetry
             traces. When unset, tracing export stays disabled.
         log_level: Root log level for the JSON logging configuration.
@@ -41,8 +58,12 @@ class Settings(BaseSettings):
     rabbitmq_port: int = Field(default=5672)
     rabbitmq_user: str = Field(default="guest")
     rabbitmq_password: str = Field(default="guest")
+    rabbitmq_vhost: str = Field(default="/")
 
     max_content_bytes: int = Field(default=DEFAULT_MAX_CONTENT_BYTES)
+    request_timeout_seconds: float = Field(default=DEFAULT_REQUEST_TIMEOUT_SECONDS)
+    max_redirects: int = Field(default=DEFAULT_MAX_REDIRECTS)
+    min_content_length: int = Field(default=DEFAULT_MIN_CONTENT_LENGTH)
 
     otlp_endpoint: str | None = Field(default=None)
 
