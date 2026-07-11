@@ -68,6 +68,13 @@ class BookmarkServiceTest {
             eq(added.id().value()),
             eq(EventTypes.BOOKMARK_UPSERTED),
             any());
+    // Adding a bookmark also dispatches the initial scrape in the SAME transaction (FR-SCR-001).
+    verify(outbox)
+        .append(
+            eq(EventTypes.AGGREGATE_BOOKMARK),
+            eq(added.id().value()),
+            eq(EventTypes.SCRAPE_REQUESTED),
+            any());
   }
 
   @Test

@@ -14,6 +14,12 @@ public interface BookmarkRepository {
 
   Optional<Bookmark> findByIdAndOwner(BookmarkId id, UserId owner);
 
+  /**
+   * Load a bookmark by id only, ignoring ownership. Reserved for internal system flows (e.g.
+   * applying scrape results that arrive as trusted internal events, not owner-scoped requests).
+   */
+  Optional<Bookmark> findById(BookmarkId id);
+
   List<Bookmark> findByCategoryAndOwner(CategoryId categoryId, UserId owner);
 
   boolean existsByCategoryAndUrl(CategoryId categoryId, String url);

@@ -27,6 +27,7 @@ public final class BookmarkDtos {
       String title,
       String description,
       String state,
+      String failureReason,
       int position,
       String createdAt,
       String updatedAt) {
@@ -39,6 +40,7 @@ public final class BookmarkDtos {
           bookmark.title(),
           bookmark.description(),
           bookmark.state().name(),
+          bookmark.failureReason(),
           bookmark.position(),
           bookmark.createdAt().toString(),
           bookmark.updatedAt().toString());

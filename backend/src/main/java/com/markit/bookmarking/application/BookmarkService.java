@@ -12,6 +12,7 @@ import com.markit.identity.domain.UserId;
 import com.markit.shared.events.BookmarkDeletedPayload;
 import com.markit.shared.events.BookmarkUpsertedPayload;
 import com.markit.shared.events.EventTypes;
+import com.markit.shared.events.ScrapeRequestedPayload;
 import com.markit.shared.outbox.OutboxWriter;
 import java.time.Clock;
 import java.util.List;
@@ -54,6 +55,7 @@ public class BookmarkService {
         Bookmark.add(BookmarkId.newId(), categoryId, owner, url, position, clock.instant());
     persist(bookmark);
     appendUpserted(bookmark);
+    appendScrapeRequested(bookmark);
     return bookmark;
   }
 
@@ -134,6 +136,19 @@ public class BookmarkService {
             bookmark.description(),
             bookmark.state().name(),
             bookmark.createdAt()));
+  }
+
+  /**
+   * Dispatch a {@code scrape.requested} event within the current transaction (same-tx as the state
+   * change, ADR-0003), so the scrape kicks off reliably via the relay without a direct broker call.
+   */
+  private void appendScrapeRequested(Bookmark bookmark) {
+    outbox.append(
+        EventTypes.AGGREGATE_BOOKMARK,
+        bookmark.id().value(),
+        EventTypes.SCRAPE_REQUESTED,
+        new ScrapeRequestedPayload(
+            bookmark.id().value(), bookmark.ownerId().value(), bookmark.url().value()));
   }
 
   private void appendDeleted(BookmarkId id) {

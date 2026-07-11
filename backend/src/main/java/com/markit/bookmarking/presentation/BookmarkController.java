@@ -10,6 +10,7 @@ import com.markit.bookmarking.presentation.BookmarkDtos.ReorderRequest;
 import com.markit.bookmarking.presentation.BookmarkDtos.UpdateBookmarkRequest;
 import com.markit.identity.domain.UserId;
 import com.markit.platform.security.AuthenticatedUser;
+import com.markit.scraping.application.ScrapeOrchestrator;
 import jakarta.validation.Valid;
 import java.util.List;
 import java.util.UUID;
@@ -30,9 +31,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class BookmarkController {
 
   private final BookmarkService bookmarks;
+  private final ScrapeOrchestrator scraping;
 
-  public BookmarkController(BookmarkService bookmarks) {
+  public BookmarkController(BookmarkService bookmarks, ScrapeOrchestrator scraping) {
     this.bookmarks = bookmarks;
+    this.scraping = scraping;
   }
 
   @GetMapping("/api/v1/categories/{cid}/bookmarks")
@@ -97,5 +100,13 @@ public class BookmarkController {
   public void delete(
       @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable UUID id) {
     bookmarks.delete(principal.id(), BookmarkId.of(id));
+  }
+
+  /** Manually re-trigger scraping (FR-SCR-004, api-contract §4): resets to PENDING, returns 202. */
+  @PostMapping("/api/v1/bookmarks/{id}/rescrape")
+  @ResponseStatus(HttpStatus.ACCEPTED)
+  public void rescrape(
+      @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable UUID id) {
+    scraping.rescrape(principal.id(), BookmarkId.of(id));
   }
 }

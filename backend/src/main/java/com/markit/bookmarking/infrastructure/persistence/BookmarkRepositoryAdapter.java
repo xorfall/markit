@@ -28,6 +28,11 @@ public class BookmarkRepositoryAdapter implements BookmarkRepository {
   }
 
   @Override
+  public Optional<Bookmark> findById(BookmarkId id) {
+    return jpa.findById(id.value()).map(BookmarkRepositoryAdapter::toDomain);
+  }
+
+  @Override
   public List<Bookmark> findByCategoryAndOwner(CategoryId categoryId, UserId owner) {
     return jpa
         .findByCategoryIdAndOwnerIdOrderByPositionAsc(categoryId.value(), owner.value())
@@ -54,6 +59,7 @@ public class BookmarkRepositoryAdapter implements BookmarkRepository {
             bookmark.title(),
             bookmark.description(),
             bookmark.state().name(),
+            bookmark.failureReason(),
             bookmark.position(),
             bookmark.createdAt(),
             bookmark.updatedAt()));
@@ -73,6 +79,7 @@ public class BookmarkRepositoryAdapter implements BookmarkRepository {
         e.getTitle(),
         e.getDescription(),
         BookmarkState.valueOf(e.getState()),
+        e.getFailureReason(),
         e.getPosition(),
         e.getCreatedAt(),
         e.getUpdatedAt());

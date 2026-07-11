@@ -31,6 +31,9 @@ public class BookmarkJpaEntity {
   @Column(nullable = false)
   private String state;
 
+  @Column(name = "failure_reason")
+  private String failureReason;
+
   @Column(nullable = false)
   private int position;
 
@@ -50,6 +53,7 @@ public class BookmarkJpaEntity {
       String title,
       String description,
       String state,
+      String failureReason,
       int position,
       Instant createdAt,
       Instant updatedAt) {
@@ -60,6 +64,7 @@ public class BookmarkJpaEntity {
     this.title = title;
     this.description = description;
     this.state = state;
+    this.failureReason = failureReason;
     this.position = position;
     this.createdAt = createdAt;
     this.updatedAt = updatedAt;
@@ -91,6 +96,10 @@ public class BookmarkJpaEntity {
 
   public String getState() {
     return state;
+  }
+
+  public String getFailureReason() {
+    return failureReason;
   }
 
   public int getPosition() {

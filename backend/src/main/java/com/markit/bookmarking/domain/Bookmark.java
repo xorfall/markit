@@ -18,6 +18,7 @@ public class Bookmark {
   private String title;
   private String description;
   private BookmarkState state;
+  private String failureReason;
   private int position;
   private final Instant createdAt;
   private Instant updatedAt;
@@ -30,6 +31,7 @@ public class Bookmark {
       String title,
       String description,
       BookmarkState state,
+      String failureReason,
       int position,
       Instant createdAt,
       Instant updatedAt) {
@@ -50,6 +52,7 @@ public class Bookmark {
     this.title = requireTitle(title);
     this.description = description;
     this.state = state;
+    this.failureReason = failureReason;
     this.position = position;
     this.createdAt = createdAt;
     this.updatedAt = updatedAt;
@@ -74,6 +77,7 @@ public class Bookmark {
         url.value(),
         null,
         BookmarkState.PENDING,
+        null,
         position,
         createdAt,
         createdAt);
@@ -88,6 +92,7 @@ public class Bookmark {
       String title,
       String description,
       BookmarkState state,
+      String failureReason,
       int position,
       Instant createdAt,
       Instant updatedAt) {
@@ -99,6 +104,7 @@ public class Bookmark {
         title,
         description,
         state,
+        failureReason,
         position,
         createdAt,
         updatedAt);
@@ -128,6 +134,39 @@ public class Bookmark {
 
   public void reposition(int newPosition, Instant now) {
     this.position = newPosition;
+    touch(now);
+  }
+
+  /**
+   * Apply scraped metadata (first scrape phase, FR-SCR-002). The bookmark stays {@code PENDING}
+   * until its content arrives. A blank scraped title is ignored so the URL fallback is not lost.
+   */
+  public void applyMetadata(String newTitle, String newDescription, Instant now) {
+    if (newTitle != null && !newTitle.isBlank()) {
+      this.title = newTitle.trim();
+    }
+    this.description = newDescription;
+    touch(now);
+  }
+
+  /** Content stored: the scrape is complete and the bookmark becomes searchable (FR-SCR-003). */
+  public void markIndexed(Instant now) {
+    this.state = BookmarkState.INDEXED;
+    this.failureReason = null;
+    touch(now);
+  }
+
+  /** Scrape failed: record the machine-readable reason for the client (FR-SCR-005). */
+  public void markFailed(String reason, Instant now) {
+    this.state = BookmarkState.FAILED;
+    this.failureReason = reason;
+    touch(now);
+  }
+
+  /** Reset for a re-scrape (FR-SCR-004): back to {@code PENDING}, clearing any prior failure. */
+  public void resetToPending(Instant now) {
+    this.state = BookmarkState.PENDING;
+    this.failureReason = null;
     touch(now);
   }
 
@@ -171,6 +210,10 @@ public class Bookmark {
 
   public BookmarkState state() {
     return state;
+  }
+
+  public String failureReason() {
+    return failureReason;
   }
 
   public int position() {
