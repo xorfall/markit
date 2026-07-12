@@ -1,0 +1,70 @@
+# markit — Prometheus alert rules (metrics-strategy §3, observability-strategy §5).
+# Only symptoms / leading indicators page. Everything else is dashboard-only.
+#
+# NOTE: No Alertmanager is wired (no on-call rotation for a solo/small-scale project).
+# Prometheus evaluates these rules and surfaces firing alerts on its own /alerts page.
+# Alertmanager routing (paging/PagerDuty) is deliberately DEFERRED — see observability-strategy §6.
+
+groups:
+  - name: markit-sync
+    rules:
+      # Sync freshness: age of the oldest PENDING outbox row. NFR-CONS-001 (p95 < 10s), R-CON-04.
+      - alert: OutboxLagHigh
+        expr: markit_outbox_pending_age_seconds > 10
+        for: 5m
+        labels:
+          severity: warning
+          component: outbox
+        annotations:
+          summary: "Outbox lag above 10s (sync falling behind)"
+          description: "Oldest PENDING outbox event is {{ $value | humanizeDuration }} old (>10s) on {{ $labels.instance }} for 5m. PG->ES projection is stale (NFR-CONS-001, R-CON-04)."
+
+      # Poison-message guard: a dead-lettered event stalls the relay. R-CON-05 — page on > 0.
+      - alert: OutboxDLQNotEmpty
+        expr: markit_outbox_dlq_size > 0
+        for: 1m
+        labels:
+          severity: critical
+          component: outbox
+        annotations:
+          summary: "Outbox DLQ is not empty"
+          description: "Outbox dead-letter queue depth is {{ $value }} (>0) on {{ $labels.instance }}. A poison event is stalling the sync pipeline (R-CON-05)."
+
+  - name: markit-search
+    rules:
+      # Honest-degradation signal: degraded-mode searches mean Elasticsearch is down. R-FAIL-03.
+      - alert: SearchDegraded
+        expr: rate(markit_search_total{mode="degraded"}[5m]) > 0
+        for: 10m
+        labels:
+          severity: warning
+          component: search
+        annotations:
+          summary: "Search running in degraded mode"
+          description: "Degraded-mode search rate is {{ $value | printf \"%.4f\" }}/s over 10m — Elasticsearch is likely down and users get metadata-only results (R-FAIL-03)."
+
+  - name: markit-scraping
+    rules:
+      # Killer feature under-delivering: scrape failure ratio > 20% over 15m. R-SCR-01.
+      - alert: ScrapeFailureRateHigh
+        expr: sum(rate(markit_scrape_total{result="failed"}[15m])) / clamp_min(sum(rate(markit_scrape_total[15m])), 1e-9) > 0.2
+        for: 15m
+        labels:
+          severity: warning
+          component: scraper
+        annotations:
+          summary: "Scrape failure ratio above 20%"
+          description: "Scrape failure ratio is {{ $value | humanizePercentage }} (>20%) over 15m. The core scrape feature is under-delivering (R-SCR-01)."
+
+  - name: markit-api
+    rules:
+      # RED errors on the HTTP API: 5xx ratio > 2% over 5m (metrics-strategy C1).
+      - alert: BackendErrorRateHigh
+        expr: sum(rate(http_server_requests_seconds_count{job="markit-backend",status=~"5.."}[5m])) / clamp_min(sum(rate(http_server_requests_seconds_count{job="markit-backend"}[5m])), 1e-9) > 0.02
+        for: 5m
+        labels:
+          severity: warning
+          component: api
+        annotations:
+          summary: "Backend 5xx error ratio above 2%"
+          description: "Backend HTTP 5xx ratio is {{ $value | humanizePercentage }} (>2%) over 5m."

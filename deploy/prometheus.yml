@@ -1,5 +1,11 @@
 global:
   scrape_interval: 15s
+  evaluation_interval: 15s
+
+# Alert rules (metrics-strategy §3). No Alertmanager configured — Prometheus evaluates these
+# and shows firing alerts on its own /alerts page. Alertmanager routing is deferred (no on-call).
+rule_files:
+  - alerts.yml
 
 scrape_configs:
   - job_name: markit-backend

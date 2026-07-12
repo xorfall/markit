@@ -52,8 +52,25 @@ services:
 
   prometheus:
     image: prom/prometheus:v2.54.1
-    volumes: ["./prometheus.yml:/etc/prometheus/prometheus.yml:ro"]
+    volumes:
+      - "./prometheus.yml:/etc/prometheus/prometheus.yml:ro"
+      - "./alerts.yml:/etc/prometheus/alerts.yml:ro"
     ports: ["9090:9090"]
+
+  # Grafana dashboards (metrics-strategy §3, observability-strategy §5). Anonymous read-only
+  # access enabled for the demo; admin password via env. Provisioning mounted read-only.
+  grafana:
+    image: grafana/grafana:11.2.0
+    depends_on: [prometheus]
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+    ports: ["3000:3000"]
+    volumes:
+      - "./grafana/provisioning:/etc/grafana/provisioning:ro"
+      - "./grafana/dashboards:/var/lib/grafana/dashboards:ro"
+      - "grafana-data:/var/lib/grafana"
 
   backend:
     build: ../backend
@@ -122,3 +139,4 @@ volumes:
   pgdata:
   esdata:
   backups:
+  grafana-data:
