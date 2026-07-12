@@ -14,6 +14,8 @@ import com.markit.shared.events.BookmarkUpsertedPayload;
 import com.markit.shared.events.EventTypes;
 import com.markit.shared.events.ScrapeRequestedPayload;
 import com.markit.shared.outbox.OutboxWriter;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Clock;
 import java.util.List;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -33,16 +35,22 @@ public class BookmarkService {
   private final CategoryRepository categories;
   private final OutboxWriter outbox;
   private final Clock clock;
+  private final Counter createdCounter;
+  private final Counter duplicateRejectedCounter;
 
   public BookmarkService(
       BookmarkRepository bookmarks,
       CategoryRepository categories,
       OutboxWriter outbox,
-      Clock clock) {
+      Clock clock,
+      MeterRegistry meterRegistry) {
     this.bookmarks = bookmarks;
     this.categories = categories;
     this.outbox = outbox;
     this.clock = clock;
+    // C3 domain metrics: successful adds vs. duplicate-URL rejections (data-model §3, R-SEC-01).
+    this.createdCounter = meterRegistry.counter("markit.bookmarks.created");
+    this.duplicateRejectedCounter = meterRegistry.counter("markit.bookmarks.duplicate_rejected");
   }
 
   @Transactional
@@ -56,6 +64,7 @@ public class BookmarkService {
     persist(bookmark);
     appendUpserted(bookmark);
     appendScrapeRequested(bookmark);
+    createdCounter.increment();
     return bookmark;
   }
 
@@ -114,6 +123,7 @@ public class BookmarkService {
       return bookmark;
     } catch (DataIntegrityViolationException e) {
       // Race: another concurrent add slipped the same URL past the pre-check (data-model §3).
+      duplicateRejectedCounter.increment();
       throw new DuplicateUrlException();
     }
   }
@@ -161,6 +171,7 @@ public class BookmarkService {
 
   private void requireNoDuplicate(CategoryId categoryId, Url url) {
     if (bookmarks.existsByCategoryAndUrl(categoryId, url.value())) {
+      duplicateRejectedCounter.increment();
       throw new DuplicateUrlException();
     }
   }

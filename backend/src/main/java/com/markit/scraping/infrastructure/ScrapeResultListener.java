@@ -7,6 +7,7 @@ import com.markit.shared.events.ScrapeContentCompletedPayload;
 import com.markit.shared.events.ScrapeFailedPayload;
 import com.markit.shared.events.ScrapeMetadataReadyPayload;
 import com.markit.shared.messaging.MessagingConfig;
+import io.micrometer.core.instrument.MeterRegistry;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import org.slf4j.Logger;
@@ -28,10 +29,13 @@ public class ScrapeResultListener {
 
   private final ScrapeOrchestrator orchestrator;
   private final ObjectMapper objectMapper;
+  private final MeterRegistry meterRegistry;
 
-  public ScrapeResultListener(ScrapeOrchestrator orchestrator, ObjectMapper objectMapper) {
+  public ScrapeResultListener(
+      ScrapeOrchestrator orchestrator, ObjectMapper objectMapper, MeterRegistry meterRegistry) {
     this.orchestrator = orchestrator;
     this.objectMapper = objectMapper;
+    this.meterRegistry = meterRegistry;
   }
 
   @RabbitListener(queues = MessagingConfig.SCRAPE_RESULTS_QUEUE)
@@ -43,14 +47,25 @@ public class ScrapeResultListener {
   /** Dispatch on the routing key. Package-visible for direct unit testing. */
   void handle(String eventType, byte[] payload) {
     switch (eventType) {
-      case EventTypes.SCRAPE_METADATA_READY ->
-          orchestrator.onMetadataReady(parse(payload, ScrapeMetadataReadyPayload.class));
-      case EventTypes.SCRAPE_CONTENT_COMPLETED ->
-          orchestrator.onContentCompleted(parse(payload, ScrapeContentCompletedPayload.class));
-      case EventTypes.SCRAPE_FAILED ->
-          orchestrator.onFailed(parse(payload, ScrapeFailedPayload.class));
+      case EventTypes.SCRAPE_METADATA_READY -> {
+        countResult("metadata");
+        orchestrator.onMetadataReady(parse(payload, ScrapeMetadataReadyPayload.class));
+      }
+      case EventTypes.SCRAPE_CONTENT_COMPLETED -> {
+        countResult("content");
+        orchestrator.onContentCompleted(parse(payload, ScrapeContentCompletedPayload.class));
+      }
+      case EventTypes.SCRAPE_FAILED -> {
+        countResult("failed");
+        orchestrator.onFailed(parse(payload, ScrapeFailedPayload.class));
+      }
       default -> log.warn("Ignoring unknown scrape event type {}", eventType);
     }
+  }
+
+  /** C6 domain metric: one increment per consumed scrape-result message, tagged by phase. */
+  private void countResult(String phase) {
+    meterRegistry.counter("markit.scrape.results", "phase", phase).increment();
   }
 
   private <T> T parse(byte[] payload, Class<T> type) {

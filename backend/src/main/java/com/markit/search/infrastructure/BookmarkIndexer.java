@@ -6,6 +6,8 @@ import com.markit.shared.events.BookmarkDeletedPayload;
 import com.markit.shared.events.BookmarkUpsertedPayload;
 import com.markit.shared.events.EventTypes;
 import com.markit.shared.messaging.MessagingConfig;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import org.slf4j.Logger;
@@ -26,17 +28,25 @@ public class BookmarkIndexer {
 
   private static final Logger log = LoggerFactory.getLogger(BookmarkIndexer.class);
 
+  private static final String OP_UPSERT = "upsert";
+  private static final String OP_DELETE = "delete";
+  private static final String RESULT_OK = "ok";
+  private static final String RESULT_ERROR = "error";
+
   private final ElasticsearchOperations elasticsearch;
   private final ContentSource contentSource;
   private final ObjectMapper objectMapper;
+  private final MeterRegistry meterRegistry;
 
   public BookmarkIndexer(
       ElasticsearchOperations elasticsearch,
       ContentSource contentSource,
-      ObjectMapper objectMapper) {
+      ObjectMapper objectMapper,
+      MeterRegistry meterRegistry) {
     this.elasticsearch = elasticsearch;
     this.contentSource = contentSource;
     this.objectMapper = objectMapper;
+    this.meterRegistry = meterRegistry;
   }
 
   @RabbitListener(queues = MessagingConfig.INDEX_QUEUE)
@@ -61,13 +71,34 @@ public class BookmarkIndexer {
    * the scrape's content phase has stored it.
    */
   void index(BookmarkUpsertedPayload payload) {
-    String content = contentSource.findContent(payload.bookmarkId()).orElse(null);
-    elasticsearch.save(BookmarkDocument.from(payload).withContent(content));
+    // C7 crown-jewel RED: time the ES op and count its outcome. On error we still re-throw so the
+    // listener nacks/DLQs — the metric records the failure, it does not swallow it.
+    Timer.Sample sample = Timer.start(meterRegistry);
+    try {
+      String content = contentSource.findContent(payload.bookmarkId()).orElse(null);
+      elasticsearch.save(BookmarkDocument.from(payload).withContent(content));
+      recordOp(sample, OP_UPSERT, RESULT_OK);
+    } catch (RuntimeException ex) {
+      recordOp(sample, OP_UPSERT, RESULT_ERROR);
+      throw ex;
+    }
   }
 
   /** Idempotent delete: delete-by-id; ES treats an absent id as a no-op (does not throw). */
   void remove(BookmarkDeletedPayload payload) {
-    elasticsearch.delete(payload.bookmarkId().toString(), BookmarkDocument.class);
+    Timer.Sample sample = Timer.start(meterRegistry);
+    try {
+      elasticsearch.delete(payload.bookmarkId().toString(), BookmarkDocument.class);
+      recordOp(sample, OP_DELETE, RESULT_OK);
+    } catch (RuntimeException ex) {
+      recordOp(sample, OP_DELETE, RESULT_ERROR);
+      throw ex;
+    }
+  }
+
+  private void recordOp(Timer.Sample sample, String op, String result) {
+    sample.stop(meterRegistry.timer("markit.index.op.duration", "op", op));
+    meterRegistry.counter("markit.index.ops", "op", op, "result", result).increment();
   }
 
   private <T> T parse(byte[] payload, Class<T> type) {

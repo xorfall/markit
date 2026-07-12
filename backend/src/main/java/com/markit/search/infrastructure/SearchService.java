@@ -5,6 +5,8 @@ import com.markit.search.application.MatchedBookmark;
 import com.markit.search.application.SearchResults;
 import com.markit.search.application.SearchResults.SearchResultItem;
 import com.markit.search.application.port.MetadataSearchSource;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Base64;
@@ -47,13 +49,20 @@ public class SearchService {
   private static final List<String> SNIPPET_FIELDS =
       List.of(CONTENT_FIELD, TITLE_FIELD, DESCRIPTION_FIELD);
 
+  private static final String MODE_NORMAL = "normal";
+  private static final String MODE_DEGRADED = "degraded";
+
   private final ElasticsearchOperations elasticsearch;
   private final MetadataSearchSource metadataSearchSource;
+  private final MeterRegistry meterRegistry;
 
   public SearchService(
-      ElasticsearchOperations elasticsearch, MetadataSearchSource metadataSearchSource) {
+      ElasticsearchOperations elasticsearch,
+      MetadataSearchSource metadataSearchSource,
+      MeterRegistry meterRegistry) {
     this.elasticsearch = elasticsearch;
     this.metadataSearchSource = metadataSearchSource;
+    this.meterRegistry = meterRegistry;
   }
 
   /**
@@ -64,14 +73,28 @@ public class SearchService {
       UserId userId, String query, UUID categoryId, int limit, String cursor) {
     int size = normalizeLimit(limit);
     int offset = decodeCursor(cursor);
+    // C8 RED: time every search (NFR-PERF-001 p95<300ms); tag its mode and flag empty result sets.
+    Timer.Sample sample = Timer.start(meterRegistry);
+    String mode = MODE_NORMAL;
+    SearchResults results;
     try {
-      return searchElasticsearch(userId, query, categoryId, size, offset);
-    } catch (RuntimeException ex) {
-      // ES down / connection failure: keep search useful via cheap Postgres metadata search
-      // (ADR-0007). The failure is swallowed here — it must never surface to the client as a 5xx.
-      log.warn("Elasticsearch search failed; degrading to Postgres metadata search", ex);
-      return searchDegraded(userId, query, categoryId, size, offset);
+      try {
+        results = searchElasticsearch(userId, query, categoryId, size, offset);
+      } catch (RuntimeException ex) {
+        // ES down / connection failure: keep search useful via cheap Postgres metadata search
+        // (ADR-0007). The failure is swallowed here — it must never surface to the client as a 5xx.
+        log.warn("Elasticsearch search failed; degrading to Postgres metadata search", ex);
+        mode = MODE_DEGRADED;
+        results = searchDegraded(userId, query, categoryId, size, offset);
+      }
+    } finally {
+      sample.stop(meterRegistry.timer("markit.search.duration"));
     }
+    meterRegistry.counter("markit.search", "mode", mode).increment();
+    if (results.results().isEmpty()) {
+      meterRegistry.counter("markit.search.zero_results").increment();
+    }
+    return results;
   }
 
   private SearchResults searchElasticsearch(

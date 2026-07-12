@@ -6,6 +6,8 @@ import com.markit.identity.application.port.UserRepository;
 import com.markit.identity.domain.Email;
 import com.markit.identity.domain.User;
 import com.markit.identity.domain.UserId;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Clock;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -20,16 +22,20 @@ public class RegisterUserService {
   private final PasswordHasher passwordHasher;
   private final SessionIssuer sessionIssuer;
   private final Clock clock;
+  private final Counter registrationsCounter;
 
   public RegisterUserService(
       UserRepository users,
       PasswordHasher passwordHasher,
       SessionIssuer sessionIssuer,
-      Clock clock) {
+      Clock clock,
+      MeterRegistry meterRegistry) {
     this.users = users;
     this.passwordHasher = passwordHasher;
     this.sessionIssuer = sessionIssuer;
     this.clock = clock;
+    // C2 domain metric: successful account registrations.
+    this.registrationsCounter = meterRegistry.counter("markit.auth.registrations");
   }
 
   @Transactional
@@ -43,7 +49,9 @@ public class RegisterUserService {
         User.registerWithPassword(
             UserId.newId(), email, passwordHasher.hash(rawPassword), clock.instant());
     users.save(user);
-    return sessionIssuer.issueFor(user.id());
+    SessionTokens tokens = sessionIssuer.issueFor(user.id());
+    registrationsCounter.increment();
+    return tokens;
   }
 
   private static void requireValidPassword(String rawPassword) {

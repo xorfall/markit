@@ -13,6 +13,7 @@ import com.markit.identity.domain.UserId;
 import com.markit.search.application.MatchedBookmark;
 import com.markit.search.application.SearchResults;
 import com.markit.search.application.port.MetadataSearchSource;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -26,7 +27,9 @@ class SearchServiceTest {
 
   private final ElasticsearchOperations elasticsearch = mock(ElasticsearchOperations.class);
   private final MetadataSearchSource metadataSearchSource = mock(MetadataSearchSource.class);
-  private final SearchService service = new SearchService(elasticsearch, metadataSearchSource);
+  private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+  private final SearchService service =
+      new SearchService(elasticsearch, metadataSearchSource, meterRegistry);
 
   private final UserId user = UserId.of(UUID.randomUUID());
 
@@ -50,6 +53,25 @@ class SearchServiceTest {
     assertThat(results.results().get(0).snippet()).isNull();
     // Metadata fallback was consulted for the owner.
     verify(metadataSearchSource).search(eq(user.value()), eq("alpha"), any(), anyInt(), anyInt());
+    // C8 metric: a degraded search increments markit.search{mode=degraded} and is timed.
+    assertThat(meterRegistry.counter("markit.search", "mode", "degraded").count()).isEqualTo(1.0);
+    assertThat(meterRegistry.counter("markit.search", "mode", "normal").count()).isZero();
+    assertThat(meterRegistry.timer("markit.search.duration").count()).isEqualTo(1L);
+  }
+
+  @Test
+  void should_IncrementZeroResultsCounter_When_ElasticsearchReturnsNoHits() {
+    // Arrange: ES answers, but with an empty hit list.
+    SearchHits<BookmarkDocument> empty = mock(SearchHits.class);
+    when(empty.getSearchHits()).thenReturn(List.of());
+    when(elasticsearch.search(any(NativeQuery.class), eq(BookmarkDocument.class))).thenReturn(empty);
+
+    // Act
+    service.search(user, "nothing", null, 20, null);
+
+    // Assert
+    assertThat(meterRegistry.counter("markit.search", "mode", "normal").count()).isEqualTo(1.0);
+    assertThat(meterRegistry.counter("markit.search.zero_results").count()).isEqualTo(1.0);
   }
 
   @Test

@@ -14,6 +14,7 @@ import com.markit.search.application.port.ContentSource;
 import com.markit.shared.events.BookmarkDeletedPayload;
 import com.markit.shared.events.BookmarkUpsertedPayload;
 import com.markit.shared.events.EventTypes;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
@@ -26,7 +27,7 @@ class BookmarkIndexerTest {
   private final ContentSource contentSource = mock(ContentSource.class);
   private final ObjectMapper mapper = new ObjectMapper().registerModule(new JavaTimeModule());
   private final BookmarkIndexer indexer =
-      new BookmarkIndexer(elasticsearch, contentSource, mapper);
+      new BookmarkIndexer(elasticsearch, contentSource, mapper, new SimpleMeterRegistry());
 
   private static BookmarkUpsertedPayload upsert(UUID id) {
     return new BookmarkUpsertedPayload(

@@ -17,6 +17,7 @@ from contextlib import asynccontextmanager, suppress
 from typing import AsyncIterator
 
 from fastapi import FastAPI
+from prometheus_client import make_asgi_app
 
 from . import __version__
 from .config import Settings, get_settings
@@ -70,6 +71,13 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
     _register_routes(app)
+    # Import the worker so its module-level counters register in the default registry and
+    # therefore appear on /metrics from process start (before the first scrape runs).
+    from .scraping import worker  # noqa: F401
+
+    # Prometheus exposition (NFR-OBS-*): scrape-worker RED + domain metrics live in
+    # app.scraping.worker; the ASGI app renders them from the default registry.
+    app.mount("/metrics", make_asgi_app())
     return app
 
 

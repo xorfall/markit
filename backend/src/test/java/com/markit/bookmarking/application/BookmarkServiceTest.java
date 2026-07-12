@@ -23,6 +23,7 @@ import com.markit.bookmarking.domain.Url;
 import com.markit.identity.domain.UserId;
 import com.markit.shared.events.EventTypes;
 import com.markit.shared.outbox.OutboxWriter;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -39,12 +40,13 @@ class BookmarkServiceTest {
   private final OutboxWriter outbox = mock(OutboxWriter.class);
   private final Clock clock = Clock.fixed(Instant.parse("2026-07-11T00:00:00Z"), ZoneOffset.UTC);
   private final UserId owner = UserId.newId();
+  private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
 
   private BookmarkService service;
 
   @BeforeEach
   void setUp() {
-    service = new BookmarkService(bookmarks, categories, outbox, clock);
+    service = new BookmarkService(bookmarks, categories, outbox, clock, meterRegistry);
   }
 
   @Test
@@ -116,6 +118,37 @@ class BookmarkServiceTest {
     assertThatThrownBy(() -> service.add(owner, categoryId, "https://example.com"))
         .isInstanceOf(DuplicateUrlException.class);
     verify(bookmarks, never()).save(any());
+  }
+
+  @Test
+  void should_IncrementDuplicateRejectedCounter_When_AddRejectedAsDuplicate() {
+    // Arrange
+    CategoryId categoryId = CategoryId.newId();
+    ownedCategory(categoryId);
+    when(bookmarks.existsByCategoryAndUrl(categoryId, "https://example.com")).thenReturn(true);
+
+    // Act
+    assertThatThrownBy(() -> service.add(owner, categoryId, "https://example.com"))
+        .isInstanceOf(DuplicateUrlException.class);
+
+    // Assert
+    assertThat(meterRegistry.counter("markit.bookmarks.duplicate_rejected").count()).isEqualTo(1.0);
+    assertThat(meterRegistry.counter("markit.bookmarks.created").count()).isZero();
+  }
+
+  @Test
+  void should_IncrementCreatedCounter_When_BookmarkAdded() {
+    // Arrange
+    CategoryId categoryId = CategoryId.newId();
+    ownedCategory(categoryId);
+    when(bookmarks.existsByCategoryAndUrl(categoryId, "https://example.com")).thenReturn(false);
+    when(bookmarks.findByCategoryAndOwner(categoryId, owner)).thenReturn(List.of());
+
+    // Act
+    service.add(owner, categoryId, "https://example.com");
+
+    // Assert
+    assertThat(meterRegistry.counter("markit.bookmarks.created").count()).isEqualTo(1.0);
   }
 
   @Test

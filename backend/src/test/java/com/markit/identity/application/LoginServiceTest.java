@@ -13,6 +13,7 @@ import com.markit.identity.application.port.UserRepository;
 import com.markit.identity.domain.Email;
 import com.markit.identity.domain.User;
 import com.markit.identity.domain.UserId;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Instant;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
@@ -22,7 +23,8 @@ class LoginServiceTest {
   private final UserRepository users = mock(UserRepository.class);
   private final PasswordHasher hasher = mock(PasswordHasher.class);
   private final SessionIssuer sessionIssuer = mock(SessionIssuer.class);
-  private final LoginService service = new LoginService(users, hasher, sessionIssuer);
+  private final LoginService service =
+      new LoginService(users, hasher, sessionIssuer, new SimpleMeterRegistry());
 
   private static User userWithPassword() {
     return User.registerWithPassword(

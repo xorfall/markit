@@ -16,8 +16,11 @@ Routing keys and JSON bodies are the contract with the Java ``ScrapeResultListen
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable
+
+from prometheus_client import Counter, Gauge, Histogram
 
 from ..config import Settings, get_settings
 from ..logging_config import get_logger
@@ -43,6 +46,33 @@ ROUTING_FAILED = "scrape.failed"
 _REASON_UNSAFE_URL = "UNSAFE_URL"
 _REASON_CONTENT_TOO_LARGE = "CONTENT_TOO_LARGE"
 _REASON_FETCH_ERROR = "FETCH_ERROR"
+
+# Scrape tiers (ADR-0009): a fast static fetch, with a headless browser as fallback.
+_TIER_STATIC = "static"
+_TIER_HEADLESS = "headless"
+
+# --- Prometheus metrics (C6 crown-jewel: scrape worker RED + domain) -------------------
+# Module-level so importing this module is side-effect-safe and the counters are shared
+# process-wide; scraped from the FastAPI ``/metrics`` endpoint.
+SCRAPE_TOTAL = Counter(
+    "markit_scrape_total",
+    "Terminal scrape outcomes, by result and failure reason (R-SCR-01, R-SEC-02/05).",
+    ["result", "reason"],
+)
+SCRAPE_DURATION = Histogram(
+    "markit_scrape_duration_seconds",
+    "Wall-clock duration of each scrape phase, by tier (NFR-PERF-003).",
+    ["tier"],
+)
+SCRAPE_TIER_TOTAL = Counter(
+    "markit_scrape_tier_total",
+    "Number of scrapes that exercised each tier (static vs headless ratio, ADR-0009 cost).",
+    ["tier"],
+)
+HEADLESS_SESSIONS_ACTIVE = Gauge(
+    "markit_headless_sessions_active",
+    "Playwright headless renders currently in flight (resource saturation).",
+)
 
 # ``publish(routing_key, body)`` — supplied by the messaging layer.
 Publisher = Callable[[str, dict[str, Any]], Awaitable[None]]
@@ -92,6 +122,8 @@ async def handle_scrape_request(
 
         # Phase 1 — static fetch (fast). If the site blocks the request (e.g. a 403
         # from a bot filter) we do NOT give up: we fall back to a headless render.
+        SCRAPE_TIER_TOTAL.labels(tier=_TIER_STATIC).inc()
+        _static_started = time.perf_counter()
         try:
             html, final_url = await fetch_html(request.url, settings=settings)
             title, description = extract_metadata(html, final_url)
@@ -106,11 +138,24 @@ async def handle_scrape_request(
                 bookmark_id=bookmark_id,
                 error=str(exc),
             )
+        finally:
+            SCRAPE_DURATION.labels(tier=_TIER_STATIC).observe(
+                time.perf_counter() - _static_started
+            )
 
         # Phase 2 — headless render for JS-heavy or bot-blocked pages (ADR-0009).
         if not content:
             _log.info("scrape.headless_fallback", bookmark_id=bookmark_id, url=request.url)
-            rendered = await render_with_headless(request.url)
+            SCRAPE_TIER_TOTAL.labels(tier=_TIER_HEADLESS).inc()
+            _headless_started = time.perf_counter()
+            HEADLESS_SESSIONS_ACTIVE.inc()
+            try:
+                rendered = await render_with_headless(request.url)
+            finally:
+                HEADLESS_SESSIONS_ACTIVE.dec()
+                SCRAPE_DURATION.labels(tier=_TIER_HEADLESS).observe(
+                    time.perf_counter() - _headless_started
+                )
             if not metadata_published:
                 title, description = extract_metadata(rendered, request.url)
                 await _publish_metadata(publish, bookmark_id, title, description)
@@ -134,6 +179,7 @@ async def handle_scrape_request(
             ROUTING_CONTENT_COMPLETED,
             {"bookmarkId": bookmark_id, "content": content},
         )
+        SCRAPE_TOTAL.labels(result="ok", reason="").inc()
         _log.info("scrape.completed", bookmark_id=bookmark_id, url=final_url)
 
     except SsrfError as exc:
@@ -161,6 +207,7 @@ async def _publish_failure(
     _log.warning(
         "scrape.failed", bookmark_id=bookmark_id, reason=reason, error=str(error)
     )
+    SCRAPE_TOTAL.labels(result="failed", reason=reason).inc()
     try:
         await publish(
             ROUTING_FAILED, {"bookmarkId": bookmark_id, "reason": reason}

@@ -17,6 +17,8 @@ dependencies = [
     "pydantic>=2.7",
     "pydantic-settings>=2.3",
     "structlog>=24.1",
+    # Prometheus metrics exposition (/metrics endpoint + worker instrumentation).
+    "prometheus-client>=0.20",
     # SSRF-safe fetching (manual redirects, streamed byte cap).
     "httpx>=0.27",
     # RabbitMQ consumer/publisher.

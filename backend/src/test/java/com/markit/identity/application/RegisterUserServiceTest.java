@@ -13,6 +13,7 @@ import com.markit.identity.application.port.UserRepository;
 import com.markit.identity.domain.Email;
 import com.markit.identity.domain.User;
 import com.markit.identity.domain.UserId;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -31,7 +32,7 @@ class RegisterUserServiceTest {
 
   @BeforeEach
   void setUp() {
-    service = new RegisterUserService(users, hasher, sessionIssuer, clock);
+    service = new RegisterUserService(users, hasher, sessionIssuer, clock, new SimpleMeterRegistry());
   }
 
   @Test

@@ -43,3 +43,12 @@ def test_readiness_reports_ready(client: TestClient) -> None:
     # Assert
     assert response.status_code == 200
     assert response.json() == {"status": "ready"}
+
+
+def test_metrics_endpoint_exposes_scrape_metrics(client: TestClient) -> None:
+    # Arrange / Act
+    response = client.get("/metrics")
+
+    # Assert
+    assert response.status_code == 200
+    assert "markit_scrape_total" in response.text

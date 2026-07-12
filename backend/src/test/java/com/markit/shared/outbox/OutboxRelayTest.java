@@ -11,6 +11,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -35,7 +36,7 @@ class OutboxRelayTest {
     properties = new OutboxProperties();
     properties.setBatchSize(100);
     properties.setMaxAttempts(3);
-    relay = new OutboxRelay(repository, publisher, properties, clock);
+    relay = new OutboxRelay(repository, publisher, properties, clock, new SimpleMeterRegistry());
   }
 
   private OutboxEventJpaEntity pending(String eventType) {

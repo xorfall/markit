@@ -6,3 +6,8 @@ scrape_configs:
     metrics_path: /actuator/prometheus
     static_configs:
       - targets: ["backend:8080"]
+
+  - job_name: markit-scraper
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["scraper:8000"]

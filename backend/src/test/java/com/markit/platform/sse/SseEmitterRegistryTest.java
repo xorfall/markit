@@ -3,12 +3,13 @@ package com.markit.platform.sse;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.markit.identity.domain.UserId;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 class SseEmitterRegistryTest {
 
-  private final SseEmitterRegistry registry = new SseEmitterRegistry();
+  private final SseEmitterRegistry registry = new SseEmitterRegistry(new SimpleMeterRegistry());
 
   @Test
   void should_RegisterAndCountConnections() {
