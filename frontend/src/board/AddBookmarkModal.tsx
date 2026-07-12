@@ -44,16 +44,31 @@ export function AddBookmarkModal({ categoryId, onClose }: Props): JSX.Element {
     }
   }, [created?.title, created?.description, created?.url, dirty, created]);
 
-  const add = (e: FormEvent) => {
-    e.preventDefault();
+  const isValidUrl = (value: string): boolean => {
+    try {
+      const parsed = new URL(value);
+      return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+    } catch {
+      return false;
+    }
+  };
+
+  // Create as soon as there's a valid URL — on blur, on Enter, or via the button — so
+  // the title and content start fetching without waiting for a separate click.
+  const createFromUrl = () => {
     const trimmed = url.trim();
-    if (!trimmed || created) return;
+    if (!trimmed || created || create.isPending || !isValidUrl(trimmed)) return;
     setError(null);
     create.mutate(trimmed, {
       onSuccess: (bm) => setCreatedId(bm.id),
       onError: (err) =>
         setError(err instanceof ApiError ? messageForCode(err.code) : 'Could not add the link.'),
     });
+  };
+
+  const onSubmit = (e: FormEvent) => {
+    e.preventDefault();
+    createFromUrl();
   };
 
   const copyUrl = async () => {
@@ -84,7 +99,7 @@ export function AddBookmarkModal({ categoryId, onClose }: Props): JSX.Element {
 
   return (
     <Modal title="Add bookmark" onClose={onClose}>
-      <form onSubmit={add}>
+      <form onSubmit={onSubmit}>
         <div className="field">
           <label className="field-label" htmlFor="add-url">
             Link
@@ -105,12 +120,19 @@ export function AddBookmarkModal({ categoryId, onClose }: Props): JSX.Element {
               placeholder="https://…"
               value={url}
               onChange={(e) => setUrl(e.target.value)}
+              onBlur={createFromUrl}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  createFromUrl();
+                }
+              }}
               autoFocus
             />
           )}
           {!created && (
             <p className="field-hint">
-              Paste a URL — markit fetches the title and indexes the page so you can search inside it.
+              Paste a URL — the title and content start loading automatically; no need to press a button.
             </p>
           )}
         </div>
