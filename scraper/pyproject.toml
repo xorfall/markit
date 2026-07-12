@@ -28,6 +28,12 @@ dependencies = [
     # Headless-browser fallback for JS pages. Imported lazily; never launched
     # in tests.
     "playwright>=1.47",
+    # Distributed tracing (NFR-OBS-004): continue the Java-initiated trace through the
+    # RabbitMQ hops and export scraper spans to Jaeger over OTLP/HTTP. Wiring is opt-in and
+    # a no-op unless OTLP_ENDPOINT is set, so tests/local runs need no collector.
+    "opentelemetry-api>=1.25",
+    "opentelemetry-sdk>=1.25",
+    "opentelemetry-exporter-otlp-proto-http>=1.25",
 ]
 
 [project.optional-dependencies]

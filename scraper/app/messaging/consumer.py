@@ -28,6 +28,7 @@ from aio_pika.abc import (
 from ..config import Settings
 from ..logging_config import bind_trace_id, get_logger
 from ..scraping.worker import ScrapeRequest, handle_scrape_request
+from ..tracing import current_trace_id, extract_context, inject_headers, start_span
 
 __all__ = [
     "ScrapeConsumer",
@@ -139,19 +140,29 @@ class ScrapeConsumer:
             await connection.close()
 
     async def _on_message(self, message: AbstractIncomingMessage) -> None:
-        """Handle one incoming message; always acks (no poison requeue)."""
+        """Handle one incoming message; always acks (no poison requeue).
+
+        Extracts the incoming W3C ``traceparent`` from the message headers and runs
+        the work inside a child ``scrape.process`` span, so the Python scrape is part
+        of the Java-initiated trace (NFR-OBS-004). Result publishes made from within
+        this span re-inject the context for the return hop.
+        """
         async with message.process(requeue=False):
-            trace_id = self._extract_trace_id(message)
-            if trace_id:
-                bind_trace_id(trace_id)
-            try:
-                request = self._parse(message.body)
-            except (ValueError, KeyError, json.JSONDecodeError) as exc:
-                _log.error("consumer.bad_message", error=str(exc))
-                return
-            await handle_scrape_request(
-                request, self._publish, settings=self._settings
-            )
+            parent = extract_context(message.headers)
+            with start_span("scrape.process", parent):
+                # Prefer the propagated trace id (correlates logs with the trace);
+                # fall back to the legacy correlation header when tracing is off.
+                trace_id = current_trace_id() or self._extract_trace_id(message)
+                if trace_id:
+                    bind_trace_id(trace_id)
+                try:
+                    request = self._parse(message.body)
+                except (ValueError, KeyError, json.JSONDecodeError) as exc:
+                    _log.error("consumer.bad_message", error=str(exc))
+                    return
+                await handle_scrape_request(
+                    request, self._publish, settings=self._settings
+                )
 
     @staticmethod
     def _extract_trace_id(message: AbstractIncomingMessage) -> str | None:
@@ -174,9 +185,14 @@ class ScrapeConsumer:
         """Publish a result to ``markit.events`` with the given routing key."""
         if self._exchange is None:
             raise RuntimeError("cannot publish before the exchange is declared")
+        # Inject the active trace context so the Java ScrapeResultListener continues
+        # the same trace (Python -> Java hop). Called from inside the `scrape.process`
+        # span, so `traceparent` points at that span; a no-op when tracing is off.
+        headers = inject_headers({})
         message = Message(
             body=json.dumps(body).encode("utf-8"),
             content_type="application/json",
             delivery_mode=aio_pika.DeliveryMode.PERSISTENT,
+            headers=headers or None,
         )
         await self._exchange.publish(message, routing_key=routing_key)

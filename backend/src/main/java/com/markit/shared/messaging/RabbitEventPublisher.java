@@ -30,6 +30,10 @@ public class RabbitEventPublisher implements EventPublisher {
             .setContentType(MessageProperties.CONTENT_TYPE_JSON)
             .setHeader("aggregateId", event.aggregateId())
             .build();
+    // Standard observed send path: with `spring.rabbitmq.template.observation-enabled=true` the
+    // RabbitTemplate injects the W3C `traceparent` header onto this message's properties before it
+    // hits the broker (end-to-end tracing, NFR-OBS-004). We deliberately keep any custom headers on
+    // the Message and let the template add the trace header — it does not overwrite ours.
     rabbitTemplate.send(MessagingConfig.EVENTS_EXCHANGE, event.eventType(), message);
   }
 }
