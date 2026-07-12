@@ -1,10 +1,11 @@
+import { GoogleLogin } from '@react-oauth/google';
 import { useAuth } from './AuthContext';
 
 /**
- * Google sign-in. Google Identity Services is not wired end-to-end in this
- * slice; the button is only rendered when VITE_GOOGLE_CLIENT_ID is configured,
- * and it posts a stub id token to /auth/google so the flow is exercised without
- * blocking the build on Google being set up (see task S6 deviation notes).
+ * Real Google sign-in via Google Identity Services. Rendered only when
+ * `VITE_GOOGLE_CLIENT_ID` is set (and the app is wrapped in `GoogleOAuthProvider`,
+ * see main.tsx). On success GIS returns a real credential (an id-token JWT) which we
+ * post to `/auth/google`; the backend verifies it against Google and issues our JWT.
  */
 export function GoogleButton({ onError }: { onError: (message: string) => void }): JSX.Element | null {
   const { loginWithGoogle } = useAuth();
@@ -12,18 +13,24 @@ export function GoogleButton({ onError }: { onError: (message: string) => void }
 
   if (!clientId) return null;
 
-  const handleClick = async () => {
-    try {
-      // Real integration would obtain this token from Google Identity Services.
-      await loginWithGoogle('stub-google-id-token');
-    } catch {
-      onError('Google sign-in is not available right now.');
-    }
-  };
-
   return (
-    <button type="button" className="btn btn-block" onClick={handleClick}>
-      Continue with Google
-    </button>
+    <div className="google-btn">
+      <GoogleLogin
+        text="continue_with"
+        onSuccess={async (credentialResponse) => {
+          const idToken = credentialResponse.credential;
+          if (!idToken) {
+            onError('Google did not return a credential. Try again.');
+            return;
+          }
+          try {
+            await loginWithGoogle(idToken);
+          } catch {
+            onError('Google sign-in failed. Try again.');
+          }
+        }}
+        onError={() => onError('Google sign-in was cancelled or failed.')}
+      />
+    </div>
   );
 }
