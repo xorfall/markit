@@ -47,7 +47,11 @@ def configure_logging(log_level: str = "INFO") -> None:
     Args:
         log_level: Root log level name (e.g. ``"INFO"``, ``"DEBUG"``).
     """
-    level = logging.getLevelNamesMapping().get(log_level.upper(), logging.INFO)
+    # getattr resolves a level name (INFO/DEBUG/...) to its int; unknown → INFO.
+    # (Avoids logging.getLevelNamesMapping(), which is Python 3.11+ only.)
+    level = getattr(logging, log_level.upper(), logging.INFO)
+    if not isinstance(level, int):
+        level = logging.INFO
 
     logging.basicConfig(
         format="%(message)s",
