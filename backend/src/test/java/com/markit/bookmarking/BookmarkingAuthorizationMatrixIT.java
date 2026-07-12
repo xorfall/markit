@@ -14,6 +14,7 @@ import com.markit.identity.domain.Email;
 import com.markit.identity.domain.User;
 import com.markit.identity.domain.UserId;
 import java.time.Instant;
+import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -74,8 +75,10 @@ class BookmarkingAuthorizationMatrixIT {
 
   @BeforeEach
   void seedTwoUsers() {
-    userA = registerUser("a@example.com");
-    UserId userB = registerUser("b@example.com");
+    // Unique per run: @BeforeEach reruns for every test method against the same container,
+    // and the email is UNIQUE — hardcoded addresses would collide on the second method.
+    userA = registerUser("a-" + UUID.randomUUID() + "@example.com");
+    UserId userB = registerUser("b-" + UUID.randomUUID() + "@example.com");
 
     collectionB = collections.create(userB, "B's collection");
     categoryB = categories.create(userB, collectionB.id(), "B's category");

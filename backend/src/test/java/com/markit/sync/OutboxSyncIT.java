@@ -91,8 +91,11 @@ class OutboxSyncIT {
     index.putMapping();
 
     owner = UserId.newId();
+    // Unique per run: @BeforeEach reruns for every test method against the same container,
+    // and the email column is UNIQUE — a hardcoded address collides on the second method.
     users.save(
-        User.registerWithPassword(owner, new Email("sync@example.com"), "hash", Instant.now()));
+        User.registerWithPassword(
+            owner, new Email("sync-" + UUID.randomUUID() + "@example.com"), "hash", Instant.now()));
   }
 
   private Category seedCategory() {
