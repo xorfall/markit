@@ -108,6 +108,14 @@ public class SearchService {
   NativeQuery buildQuery(UserId userId, String query, UUID categoryId, int size, int offset) {
     String terms = query == null ? "" : query.trim();
 
+    // Partial (prefix) matching once there are at least 3 characters — e.g. "rel" matches
+    // "reliability". Shorter queries (1-2 chars) match whole terms only — e.g. "go" matches
+    // only the token "go", not "golang".
+    final co.elastic.clients.elasticsearch._types.query_dsl.TextQueryType matchType =
+        terms.length() >= 3
+            ? co.elastic.clients.elasticsearch._types.query_dsl.TextQueryType.BoolPrefix
+            : co.elastic.clients.elasticsearch._types.query_dsl.TextQueryType.BestFields;
+
     var boolQuery =
         co.elastic.clients.elasticsearch._types.query_dsl.Query.of(
             q ->
@@ -121,6 +129,7 @@ public class SearchService {
                                 m.multiMatch(
                                     mm ->
                                         mm.query(terms)
+                                            .type(matchType)
                                             .fields(
                                                 TITLE_FIELD, DESCRIPTION_FIELD, CONTENT_FIELD)));
                       }
