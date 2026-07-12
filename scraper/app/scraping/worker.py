@@ -22,7 +22,7 @@ from typing import Any, Awaitable, Callable
 from ..config import Settings, get_settings
 from ..logging_config import get_logger
 from .extract import extract_content, extract_metadata, render_with_headless
-from .fetch import ContentTooLargeError, fetch_html
+from .fetch import ContentTooLargeError, FetchError, fetch_html
 from .ssrf import SsrfError, assert_url_allowed
 
 __all__ = [
@@ -84,26 +84,46 @@ async def handle_scrape_request(
     try:
         assert_url_allowed(request.url)
 
-        html, final_url = await fetch_html(request.url, settings=settings)
+        final_url = request.url
+        title = ""
+        description = ""
+        content = ""
+        metadata_published = False
 
-        title, description = extract_metadata(html, final_url)
-        await publish(
-            ROUTING_METADATA_READY,
-            {
-                "bookmarkId": bookmark_id,
-                "title": title,
-                "description": description,
-            },
-        )
+        # Phase 1 — static fetch (fast). If the site blocks the request (e.g. a 403
+        # from a bot filter) we do NOT give up: we fall back to a headless render.
+        try:
+            html, final_url = await fetch_html(request.url, settings=settings)
+            title, description = extract_metadata(html, final_url)
+            await _publish_metadata(publish, bookmark_id, title, description)
+            metadata_published = True
+            content = extract_content(
+                html, final_url, min_length=settings.min_content_length
+            )
+        except FetchError as exc:
+            _log.info(
+                "scrape.static_blocked",
+                bookmark_id=bookmark_id,
+                error=str(exc),
+            )
 
-        content = extract_content(
-            html, final_url, min_length=settings.min_content_length
-        )
+        # Phase 2 — headless render for JS-heavy or bot-blocked pages (ADR-0009).
         if not content:
-            _log.info("scrape.headless_fallback", bookmark_id=bookmark_id, url=final_url)
+            _log.info("scrape.headless_fallback", bookmark_id=bookmark_id, url=request.url)
             rendered = await render_with_headless(request.url)
-            # After a headless render accept any non-empty extraction.
-            content = extract_content(rendered, final_url, min_length=0)
+            if not metadata_published:
+                title, description = extract_metadata(rendered, request.url)
+                await _publish_metadata(publish, bookmark_id, title, description)
+                metadata_published = True
+            content = extract_content(rendered, request.url, min_length=0)
+
+        # Quality gate: a page that yields too little real text (a 404 shell, a
+        # login/paywall wall, or pure navigation chrome) is an honest failure — never
+        # a silently "indexed" bookmark whose content is junk (the "fake indexed" bug).
+        if len(content.strip()) < settings.min_content_length:
+            raise FetchError(
+                "content too thin — likely blocked, paywalled, or not an article"
+            )
 
         if len(content.encode("utf-8")) > settings.max_content_bytes:
             raise ContentTooLargeError(
@@ -122,6 +142,16 @@ async def handle_scrape_request(
         await _publish_failure(publish, bookmark_id, _REASON_CONTENT_TOO_LARGE, exc)
     except Exception as exc:  # noqa: BLE001 - handler must never propagate
         await _publish_failure(publish, bookmark_id, _REASON_FETCH_ERROR, exc)
+
+
+async def _publish_metadata(
+    publish: Publisher, bookmark_id: str, title: str, description: str
+) -> None:
+    """Emit the phase-1 ``scrape.metadata-ready`` result (fast title/description)."""
+    await publish(
+        ROUTING_METADATA_READY,
+        {"bookmarkId": bookmark_id, "title": title, "description": description},
+    )
 
 
 async def _publish_failure(

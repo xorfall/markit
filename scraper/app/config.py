@@ -25,7 +25,7 @@ DEFAULT_MAX_REDIRECTS = 5
 
 # Default minimum length (characters) of extracted content below which the
 # static extraction is considered insufficient and the headless fallback runs.
-DEFAULT_MIN_CONTENT_LENGTH = 200
+DEFAULT_MIN_CONTENT_LENGTH = 500
 
 
 class Settings(BaseSettings):

@@ -28,12 +28,16 @@ _ALLOWED_CONTENT_TYPES = frozenset(
     {"text/html", "application/xhtml+xml", "text/plain"}
 )
 
-# A conservative browser-like User-Agent; some sites reject the default.
+# A realistic desktop-browser User-Agent — many sites reject library/bot agents
+# with a 403. Sites behind a JS challenge (Cloudflare, Medium) still need the
+# headless fallback, which the worker triggers when the static fetch is blocked.
 _DEFAULT_HEADERS = {
     "User-Agent": (
-        "Mozilla/5.0 (compatible; MarkitScraper/0.1; +https://markit.local)"
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
     ),
-    "Accept": "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.1",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
 }
 
 

@@ -36,6 +36,11 @@ def _allow_url(monkeypatch):
     monkeypatch.setattr(worker_mod, "assert_url_allowed", lambda url: None)
 
 
+# Content long enough to clear the quality floor (a real article is not a few words).
+_LONG_A = "This is the real article body. " * 30
+_LONG_B = "Rendered article text here. " * 30
+
+
 def test_happy_path_publishes_metadata_then_content(monkeypatch, _allow_url) -> None:
     # Arrange
     async def fake_fetch(url, *, settings=None):
@@ -44,7 +49,7 @@ def test_happy_path_publishes_metadata_then_content(monkeypatch, _allow_url) -> 
     monkeypatch.setattr(worker_mod, "fetch_html", fake_fetch)
     monkeypatch.setattr(worker_mod, "extract_metadata", lambda h, u: ("Title", "Desc"))
     monkeypatch.setattr(
-        worker_mod, "extract_content", lambda h, u, min_length=None: "CONTENT"
+        worker_mod, "extract_content", lambda h, u, min_length=None: _LONG_A
     )
     publisher = _FakePublisher()
     request = ScrapeRequest("bm-1", "owner-1", "http://example.com/")
@@ -62,7 +67,7 @@ def test_happy_path_publishes_metadata_then_content(monkeypatch, _allow_url) -> 
         "title": "Title",
         "description": "Desc",
     }
-    assert publisher.calls[1][1] == {"bookmarkId": "bm-1", "content": "CONTENT"}
+    assert publisher.calls[1][1] == {"bookmarkId": "bm-1", "content": _LONG_A}
 
 
 def test_headless_fallback_when_static_content_empty(monkeypatch, _allow_url) -> None:
@@ -73,7 +78,7 @@ def test_headless_fallback_when_static_content_empty(monkeypatch, _allow_url) ->
     async def fake_render(url):
         return "<html>rendered</html>"
 
-    contents = iter(["", "RENDERED"])
+    contents = iter(["", _LONG_B])
     monkeypatch.setattr(worker_mod, "fetch_html", fake_fetch)
     monkeypatch.setattr(worker_mod, "extract_metadata", lambda h, u: ("T", "D"))
     monkeypatch.setattr(
@@ -91,7 +96,7 @@ def test_headless_fallback_when_static_content_empty(monkeypatch, _allow_url) ->
         "scrape.metadata-ready",
         "scrape.content-completed",
     ]
-    assert publisher.calls[1][1] == {"bookmarkId": "bm-2", "content": "RENDERED"}
+    assert publisher.calls[1][1] == {"bookmarkId": "bm-2", "content": _LONG_B}
 
 
 def test_ssrf_blocked_url_publishes_single_unsafe_failure(monkeypatch) -> None:
