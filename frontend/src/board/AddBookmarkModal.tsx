@@ -18,9 +18,9 @@ interface Props {
 }
 
 /**
- * Add-bookmark dialog. Step 1 pastes a URL; step 2 shows the created bookmark live —
- * the title auto-fills from the scrape, notes are editable, and a pill tracks the
- * PENDING → INDEXED/FAILED state (updated by the column's polling).
+ * Add-bookmark dialog — a single view. You paste a URL at the top; the title, notes
+ * and state below fill in live from the scrape (PENDING → INDEXED/FAILED). Nothing
+ * jumps to a second screen: the same form grows into the created bookmark.
  */
 export function AddBookmarkModal({ categoryId, onClose }: Props): JSX.Element {
   const { create, edit, rescrape } = useBookmarkMutations(categoryId);
@@ -44,10 +44,10 @@ export function AddBookmarkModal({ categoryId, onClose }: Props): JSX.Element {
     }
   }, [created?.title, created?.description, created?.url, dirty, created]);
 
-  const onAdd = (e: FormEvent) => {
+  const add = (e: FormEvent) => {
     e.preventDefault();
     const trimmed = url.trim();
-    if (!trimmed) return;
+    if (!trimmed || created) return;
     setError(null);
     create.mutate(trimmed, {
       onSuccess: (bm) => setCreatedId(bm.id),
@@ -76,15 +76,29 @@ export function AddBookmarkModal({ categoryId, onClose }: Props): JSX.Element {
     onClose();
   };
 
-  // Step 1 — paste a URL.
-  if (!created) {
-    return (
-      <Modal title="Add bookmark" onClose={onClose}>
-        <form onSubmit={onAdd}>
-          <div className="field">
-            <label className="field-label" htmlFor="add-url">
-              Link
-            </label>
+  const titlePlaceholder = !created
+    ? 'Fills in automatically once you add the link'
+    : created.state === 'PENDING'
+      ? 'Fetching title…'
+      : 'Title';
+
+  return (
+    <Modal title="Add bookmark" onClose={onClose}>
+      <form onSubmit={add}>
+        <div className="field">
+          <label className="field-label" htmlFor="add-url">
+            Link
+          </label>
+          {created ? (
+            <div className="copy-row">
+              <span className="mono copy-url" title={created.url}>
+                {created.url}
+              </span>
+              <button type="button" className="btn btn-sm btn-ghost" onClick={copyUrl}>
+                {copied ? 'Copied' : 'Copy'}
+              </button>
+            </div>
+          ) : (
             <input
               id="add-url"
               className="input mono"
@@ -93,106 +107,109 @@ export function AddBookmarkModal({ categoryId, onClose }: Props): JSX.Element {
               onChange={(e) => setUrl(e.target.value)}
               autoFocus
             />
+          )}
+          {!created && (
             <p className="field-hint">
               Paste a URL — markit fetches the title and indexes the page so you can search inside it.
             </p>
-          </div>
-          {error && (
-            <p className="inline-error" role="alert">
-              {error}
-            </p>
           )}
-          <div className="modal-actions">
-            <button type="button" className="btn btn-ghost" onClick={onClose}>
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="btn btn-primary"
-              disabled={create.isPending || !url.trim()}
-            >
-              {create.isPending ? 'Adding…' : 'Add bookmark'}
-            </button>
-          </div>
-        </form>
-      </Modal>
-    );
-  }
-
-  // Step 2 — the created bookmark, live.
-  const stateClass = `state-pill state-pill-${created.state.toLowerCase()}`;
-  return (
-    <Modal title="Bookmark added" onClose={onClose}>
-      <div className="field">
-        <label className="field-label">Link</label>
-        <div className="copy-row">
-          <span className="mono copy-url" title={created.url}>
-            {created.url}
-          </span>
-          <button type="button" className="btn btn-sm btn-ghost" onClick={copyUrl}>
-            {copied ? 'Copied' : 'Copy'}
-          </button>
         </div>
-      </div>
 
-      <div className="field" style={{ marginTop: 'var(--sp-3)' }}>
-        <label className="field-label" htmlFor="add-title">
-          Title
-        </label>
-        <input
-          id="add-title"
-          className="input"
-          placeholder={created.state === 'PENDING' ? 'Fetching title…' : 'Title'}
-          value={title}
-          onChange={(e) => {
-            setTitle(e.target.value);
-            setDirty(true);
-          }}
-        />
-      </div>
+        <div className="field" style={{ marginTop: 'var(--sp-3)' }}>
+          <label className="field-label" htmlFor="add-title">
+            Title
+          </label>
+          <input
+            id="add-title"
+            className="input"
+            placeholder={titlePlaceholder}
+            value={title}
+            disabled={!created}
+            onChange={(e) => {
+              setTitle(e.target.value);
+              setDirty(true);
+            }}
+          />
+        </div>
 
-      <div className="field" style={{ marginTop: 'var(--sp-3)' }}>
-        <label className="field-label" htmlFor="add-notes">
-          Notes
-        </label>
-        <textarea
-          id="add-notes"
-          className="input"
-          rows={2}
-          placeholder="Optional"
-          value={description}
-          onChange={(e) => {
-            setDescription(e.target.value);
-            setDirty(true);
-          }}
-        />
-      </div>
+        <div className="field" style={{ marginTop: 'var(--sp-3)' }}>
+          <label className="field-label" htmlFor="add-notes">
+            Notes
+          </label>
+          <textarea
+            id="add-notes"
+            className="input"
+            rows={2}
+            placeholder={created ? 'Optional' : 'Add a note once the link is saved'}
+            value={description}
+            disabled={!created}
+            onChange={(e) => {
+              setDescription(e.target.value);
+              setDirty(true);
+            }}
+          />
+        </div>
 
-      <div className="field" style={{ marginTop: 'var(--sp-3)' }}>
-        <span className={stateClass}>
-          <span className="state-dot" />
-          {STATE_LABEL[created.state]}
-        </span>
-        {created.state === 'FAILED' && (
-          <div className="card-failure" style={{ marginTop: 'var(--sp-2)' }}>
-            {failureMessage(created)}
-            <div className="card-failure-actions">
-              <button className="btn btn-sm" onClick={() => rescrape.mutate(created.id)}>
-                <RefreshIcon width={13} height={13} /> Re-scrape
-              </button>
-            </div>
+        {created && (
+          <div className="field" style={{ marginTop: 'var(--sp-3)' }}>
+            <span className={`state-pill state-pill-${created.state.toLowerCase()}`}>
+              <span className="state-dot" />
+              {STATE_LABEL[created.state]}
+            </span>
+            {created.state === 'FAILED' && (
+              <div className="card-failure" style={{ marginTop: 'var(--sp-2)' }}>
+                {failureMessage(created)}
+                <div className="card-failure-actions">
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    onClick={() => rescrape.mutate(created.id)}
+                  >
+                    <RefreshIcon width={13} height={13} /> Re-scrape
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
-      </div>
 
-      <div className="modal-actions">
-        <button type="button" className="btn btn-ghost" onClick={onClose}>
-          Done
-        </button>
-        <button type="button" className="btn btn-primary" onClick={save} disabled={edit.isPending}>
-          Save changes
-        </button>
-      </div>
+        {error && (
+          <p className="inline-error" role="alert">
+            {error}
+          </p>
+        )}
+
+        <div className="modal-actions">
+          {created ? (
+            <>
+              <button type="button" className="btn btn-ghost" onClick={onClose}>
+                Done
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={save}
+                disabled={edit.isPending}
+              >
+                Save changes
+              </button>
+            </>
+          ) : (
+            <>
+              <button type="button" className="btn btn-ghost" onClick={onClose}>
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="btn btn-primary"
+                disabled={create.isPending || !url.trim()}
+              >
+                {create.isPending ? 'Adding…' : 'Add bookmark'}
+              </button>
+            </>
+          )}
+        </div>
+      </form>
     </Modal>
   );
 }
