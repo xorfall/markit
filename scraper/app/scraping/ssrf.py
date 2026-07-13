@@ -16,6 +16,9 @@ Defenses implemented here:
   on every redirect hop's target.
 * **Per-sub-request check** — the same primitives (:func:`assert_url_allowed`,
   :func:`is_blocked_ip`) are re-applied to every headless sub-request (ADR-0009).
+* **IP pinning** — :func:`resolve_and_validate` returns the exact address that
+  was checked so the caller can connect to *it* rather than re-resolving the
+  name, closing the DNS-rebinding (TOCTOU) window (ADR-0008 §5).
 """
 
 from __future__ import annotations
@@ -28,6 +31,7 @@ __all__ = [
     "SsrfError",
     "is_blocked_ip",
     "assert_url_allowed",
+    "resolve_and_validate",
     "validate_redirect",
 ]
 
@@ -97,15 +101,22 @@ def _resolve_host(host: str) -> list[str]:
     return [info[4][0] for info in infos]
 
 
-def assert_url_allowed(url: str) -> None:
-    """Validate that ``url`` is safe to fetch, raising otherwise.
+def resolve_and_validate(url: str) -> str:
+    """Validate ``url`` and return a single safe IP to pin the connection to.
 
-    Enforces the scheme allowlist and the resolve-and-check deny-list: the
-    hostname is resolved and the request is refused if **any** resolved address
-    is blocked.
+    Runs the same checks as :func:`assert_url_allowed` — scheme allowlist plus
+    the resolve-and-check deny-list — but returns one of the validated addresses.
+    Connecting to *this* address (instead of letting the HTTP client re-resolve
+    the hostname) closes the DNS-rebinding window: the address we contact is the
+    exact address we checked. The caller keeps the original hostname for the
+    ``Host`` header and TLS SNI / certificate verification (ADR-0008 §5).
 
     Args:
         url: The absolute URL about to be fetched.
+
+    Returns:
+        A textual IP address, drawn from the host's resolution, that has passed
+        the deny-list and is therefore safe to connect to.
 
     Raises:
         SsrfError: If the scheme is not http(s), the host is missing, resolution
@@ -124,9 +135,31 @@ def assert_url_allowed(url: str) -> None:
     if not resolved:
         raise SsrfError(f"host resolved to no addresses: {host}")
 
+    # Every resolved address must pass: a host that maps to *any* blocked address
+    # is refused outright, so a rebinding set that mixes public and private fails.
     for ip in resolved:
         if is_blocked_ip(ip):
             raise SsrfError(f"blocked address for host {host}: {ip}")
+
+    return resolved[0]
+
+
+def assert_url_allowed(url: str) -> None:
+    """Validate that ``url`` is safe to fetch, raising otherwise.
+
+    Enforces the scheme allowlist and the resolve-and-check deny-list: the
+    hostname is resolved and the request is refused if **any** resolved address
+    is blocked. Thin wrapper over :func:`resolve_and_validate` for callers that
+    only need the assertion (e.g. the headless per-sub-request check).
+
+    Args:
+        url: The absolute URL about to be fetched.
+
+    Raises:
+        SsrfError: If the scheme is not http(s), the host is missing, resolution
+            fails, or any resolved address is on the deny-list.
+    """
+    resolve_and_validate(url)
 
 
 def validate_redirect(base_url: str, location: str) -> str:
