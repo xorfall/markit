@@ -4,6 +4,9 @@ Fetches a user-supplied URL with the hardening mandated by ADR-0008:
 
 * redirects are followed **manually** (``follow_redirects=False``) and every hop
   is re-validated with the SSRF guard before the request is dispatched;
+* the connection is **pinned to the validated IP** (:class:`_PinnedTransport`),
+  so the address contacted is the exact one the guard checked — no re-resolution
+  window for DNS rebinding to exploit (ADR-0008 §5);
 * only an allowlisted set of content types is accepted;
 * the body is streamed and capped at ``settings.max_content_bytes`` decoded
   bytes, aborting on overflow (decompression-bomb defense, R-SEC-05);
@@ -16,11 +19,40 @@ import httpx
 
 from ..config import Settings, get_settings
 from ..logging_config import get_logger
-from .ssrf import assert_url_allowed, validate_redirect
+from .ssrf import resolve_and_validate, validate_redirect
 
 __all__ = ["FetchError", "ContentTooLargeError", "fetch_html"]
 
 _log = get_logger(__name__)
+
+
+class _PinnedTransport(httpx.AsyncHTTPTransport):
+    """Transport that connects to the exact IP the SSRF guard validated.
+
+    The guard resolves a hostname and checks the resulting IP, but a normal HTTP
+    client re-resolves the name when it opens the socket. A DNS-rebinding
+    attacker exploits that gap: return a public IP for the guard's lookup, then a
+    private one (``169.254.169.254``, ``127.0.0.1``, …) for the connect — a
+    classic time-of-check-to-time-of-use (TOCTOU) bypass.
+
+    This transport removes the gap. For a request carrying a ``pinned_ip``
+    extension it rewrites the URL host to that IP (so the socket goes to the
+    address that was actually checked) while preserving the original hostname for
+    the ``Host`` header — already set by the client — and for the TLS
+    ``sni_hostname`` extension, which httpcore uses as the ``server_hostname`` for
+    SNI *and* certificate-hostname verification. The certificate is therefore
+    still validated against the real name, not the IP.
+    """
+
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        pinned_ip = request.extensions.get("pinned_ip")
+        if pinned_ip:
+            hostname = request.url.host
+            request.url = request.url.copy_with(host=pinned_ip)
+            # Keep TLS keyed to the real hostname: SNI + cert check use this, not
+            # the pinned IP. (The Host header, set by the client, is untouched.)
+            request.extensions = {**request.extensions, "sni_hostname": hostname}
+        return await super().handle_async_request(request)
 
 # Content types that carry text we can extract. Anything else is refused so the
 # scraper cannot be pointed at binaries or unexpected payloads (ADR-0008 §4).
@@ -107,12 +139,16 @@ async def fetch_html(url: str, *, settings: Settings | None = None) -> tuple[str
         follow_redirects=False,
         timeout=settings.request_timeout_seconds,
         headers=_DEFAULT_HEADERS,
+        transport=_PinnedTransport(),
     ) as client:
         for _ in range(settings.max_redirects + 1):
-            # Re-validate every hop (initial URL included) before requesting it.
-            assert_url_allowed(current)
+            # Re-validate every hop (initial URL included) and pin to the checked
+            # IP so the connection cannot be rebound to a private address.
+            pinned_ip = resolve_and_validate(current)
             try:
-                async with client.stream("GET", current) as response:
+                async with client.stream(
+                    "GET", current, extensions={"pinned_ip": pinned_ip}
+                ) as response:
                     if response.is_redirect:
                         location = response.headers.get("location")
                         if not location:

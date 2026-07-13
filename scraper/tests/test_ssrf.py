@@ -5,7 +5,12 @@ from __future__ import annotations
 import pytest
 
 from app.scraping import ssrf
-from app.scraping.ssrf import SsrfError, assert_url_allowed, is_blocked_ip
+from app.scraping.ssrf import (
+    SsrfError,
+    assert_url_allowed,
+    is_blocked_ip,
+    resolve_and_validate,
+)
 
 
 @pytest.mark.parametrize(
@@ -52,3 +57,25 @@ def test_assert_url_allowed_permits_public_resolution(monkeypatch) -> None:
 
     # Act / Assert (should not raise)
     assert_url_allowed("http://example.com/")
+
+
+def test_resolve_and_validate_returns_the_checked_ip(monkeypatch) -> None:
+    # Arrange: the caller pins to exactly this address.
+    monkeypatch.setattr(ssrf, "_resolve_host", lambda host: ["93.184.216.34"])
+
+    # Act
+    pinned = resolve_and_validate("http://example.com/")
+
+    # Assert
+    assert pinned == "93.184.216.34"
+
+
+def test_resolve_and_validate_rejects_when_any_address_is_private(monkeypatch) -> None:
+    # Arrange: a rebinding set mixing a public and a private answer must fail.
+    monkeypatch.setattr(
+        ssrf, "_resolve_host", lambda host: ["93.184.216.34", "10.0.0.5"]
+    )
+
+    # Act / Assert
+    with pytest.raises(SsrfError):
+        resolve_and_validate("http://example.com/")
